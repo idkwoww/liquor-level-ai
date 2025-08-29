@@ -1,100 +1,19 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
   <meta charset="UTF-8">
-  <title>Liquor Bottle AI</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <style>
-    body { font-family: Arial, sans-serif; text-align: center; margin: 0; padding: 20px; background: #f8f8f8; }
-    #webcam-container canvas { width: 90%; max-width: 500px; border-radius: 12px; border: 2px solid #333; margin-top: 10px; }
-    #label-container { margin-top: 20px; font-size: 1.1em; text-align: left; max-width: 500px; margin-left: auto; margin-right: auto; }
-    button { padding: 12px 16px; font-size: 1rem; border-radius: 8px; cursor: pointer; margin-top: 10px; }
-    .progress-bar { width: 100%; background-color: #ddd; border-radius: 10px; margin-top: 5px; height: 18px; }
-    .progress-fill { height: 100%; background-color: #4CAF50; border-radius: 10px; width: 0%; text-align: right; padding-right: 5px; color: white; font-weight: bold; }
-  </style>
+  <title>Test TM</title>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.21.0/dist/tf.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@0.8.4/dist/teachablemachine-image.min.js"></script>
 </head>
 <body>
-  <h1>Liquor Bottle AI Test</h1>
-  <p>Tap the button to start your rear camera and scan a bottle.</p>
-  <button id="startBtn">Start Camera</button>
-  <div id="webcam-container"></div>
-  <div id="label-container"></div>
-
-  <!-- TensorFlow.js + Teachable Machine scripts -->
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@latest"></script>
-
+  <h1>TM Test</h1>
   <script>
-    // Correct folder path to your model files
-    const URL = "./model/"; // model.json, metadata.json, and .bin files inside 'model' folder
-
-    let model, webcam, labelContainer, maxPredictions;
-
-    async function init() {
-      const modelURL = URL + "model.json";
-      const metadataURL = URL + "metadata.json";
-
-      try {
-        model = await tmImage.load(modelURL, metadataURL);
-      } catch (err) {
-        alert("Error loading model: " + err.message);
-        return;
-      }
-
-      maxPredictions = model.getTotalClasses();
-
-      // Rear camera
-      webcam = new tmImage.Webcam(480, 360, false, "environment");
-      await webcam.setup(); // request permission
-      await webcam.play();
-      window.requestAnimationFrame(loop);
-
-      const webcamContainer = document.getElementById("webcam-container");
-      webcamContainer.innerHTML = "";
-      webcamContainer.appendChild(webcam.canvas);
-
-      labelContainer = document.getElementById("label-container");
-      labelContainer.innerHTML = "";
-      for (let i = 0; i < maxPredictions; i++) {
-        const labelDiv = document.createElement("div");
-        const progressDiv = document.createElement("div");
-        progressDiv.className = "progress-bar";
-        const fillDiv = document.createElement("div");
-        fillDiv.className = "progress-fill";
-        progressDiv.appendChild(fillDiv);
-        labelDiv.appendChild(progressDiv);
-        labelContainer.appendChild(labelDiv);
-      }
+    if (typeof tmImage !== 'undefined') {
+      alert("tmImage is loaded!");
+    } else {
+      alert("tmImage is NOT loaded!");
     }
-
-    async function loop() {
-      webcam.update();
-      await predict();
-      window.requestAnimationFrame(loop);
-    }
-
-    async function predict() {
-      const prediction = await model.predict(webcam.canvas);
-      prediction.sort((a, b) => b.probability - a.probability);
-
-      for (let i = 0; i < prediction.length; i++) {
-        const fillDiv = labelContainer.childNodes[i].querySelector(".progress-fill");
-        const pct = (prediction[i].probability * 100).toFixed(1);
-        fillDiv.style.width = pct + "%";
-        fillDiv.textContent = `${prediction[i].className} ${pct}%`;
-      }
-    }
-
-    document.getElementById("startBtn").addEventListener("click", async () => {
-      const btn = document.getElementById("startBtn");
-      btn.disabled = true;
-      try {
-        await init();
-      } catch (err) {
-        alert("Error starting camera/model: " + err.message);
-        btn.disabled = false;
-      }
-    });
   </script>
 </body>
 </html>
