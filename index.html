@@ -34,8 +34,14 @@
   <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@0.8.4/dist/teachablemachine-image.min.js"></script>
 
   <script>
-    const URL = "./model/"; // model folder path
+    const URL = "./model/"; 
     let model, webcam, labelContainer, maxPredictions;
+
+    async function checkCameraAvailability(facingMode) {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) return false;
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      return devices.some(d => d.kind === "videoinput" && d.label.toLowerCase().includes(facingMode === "environment" ? "back" : "front"));
+    }
 
     async function init(facingMode = "environment") {
       const modelURL = URL + "model.json";
@@ -56,7 +62,14 @@
         document.getElementById("webcam-container").innerHTML = "";
       }
 
-      // Initialize webcam with selected camera
+      // Check if requested camera is available
+      const available = await checkCameraAvailability(facingMode);
+      if (!available) {
+        alert(`The ${facingMode === "environment" ? "rear" : "front"} camera is not available on this device.`);
+        return;
+      }
+
+      // Initialize webcam
       webcam = new tmImage.Webcam(480, 360, false, { facingMode });
       try {
         await webcam.setup();
@@ -66,7 +79,6 @@
         return;
       }
       window.requestAnimationFrame(loop);
-
       document.getElementById("webcam-container").appendChild(webcam.canvas);
 
       // Setup progress bars if not already present
@@ -110,6 +122,7 @@
     startBtn.addEventListener("click", async () => {
       startBtn.disabled = true;
       await init(cameraSelect.value);
+      startBtn.disabled = false;
     });
 
     refreshBtn.addEventListener("click", async () => {
