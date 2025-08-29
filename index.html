@@ -8,15 +8,23 @@
     body { font-family: Arial, sans-serif; text-align: center; margin: 0; padding: 20px; background: #f8f8f8; }
     #webcam-container canvas { width: 90%; max-width: 500px; border-radius: 12px; border: 2px solid #333; margin-top: 10px; }
     #label-container { margin-top: 20px; font-size: 1.1em; text-align: left; max-width: 500px; margin-left: auto; margin-right: auto; }
-    button { padding: 12px 16px; font-size: 1rem; border-radius: 8px; cursor: pointer; margin-top: 10px; }
+    button, select { padding: 12px 16px; font-size: 1rem; border-radius: 8px; cursor: pointer; margin-top: 10px; }
     .progress-bar { width: 100%; background-color: #ddd; border-radius: 10px; margin-top: 5px; height: 18px; }
     .progress-fill { height: 100%; background-color: #4CAF50; border-radius: 10px; width: 0%; text-align: right; padding-right: 5px; color: white; font-weight: bold; }
   </style>
 </head>
 <body>
   <h1>Liquor Bottle AI Test</h1>
-  <p>Tap the button to start your rear camera and scan a bottle.</p>
+  <p>Select camera and tap "Start Camera" to scan a bottle.</p>
+
+  <label for="cameraSelect">Camera:</label>
+  <select id="cameraSelect">
+    <option value="environment" selected>Rear</option>
+    <option value="user">Front</option>
+  </select>
+  <br>
   <button id="startBtn">Start Camera</button>
+
   <div id="webcam-container"></div>
   <div id="label-container"></div>
 
@@ -25,17 +33,15 @@
   <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@0.8.4/dist/teachablemachine-image.min.js"></script>
 
   <script>
-    // Path to model folder
-    const URL = "./model/"; // model.json, metadata.json, and .bin files inside 'model' folder
-
+    const URL = "./model/"; // model folder path
     let model, webcam, labelContainer, maxPredictions;
 
-    async function init() {
+    async function init(facingMode = "environment") {
       const modelURL = URL + "model.json";
       const metadataURL = URL + "metadata.json";
 
       try {
-        model = await tmImage.load(modelURL, metadataURL);
+        if (!model) model = await tmImage.load(modelURL, metadataURL);
       } catch (err) {
         alert("Error loading model: " + err.message);
         return;
@@ -43,28 +49,33 @@
 
       maxPredictions = model.getTotalClasses();
 
-      // Force rear camera
-      webcam = new tmImage.Webcam(480, 360, false, { facingMode: "environment" });
+      // Stop previous webcam if exists
+      if (webcam) {
+        webcam.stop();
+        document.getElementById("webcam-container").innerHTML = "";
+      }
+
+      // Initialize webcam with selected camera
+      webcam = new tmImage.Webcam(480, 360, false, { facingMode });
       await webcam.setup();
       await webcam.play();
       window.requestAnimationFrame(loop);
 
-      const webcamContainer = document.getElementById("webcam-container");
-      webcamContainer.innerHTML = "";
-      webcamContainer.appendChild(webcam.canvas);
+      document.getElementById("webcam-container").appendChild(webcam.canvas);
 
-      // Set up progress bars for predictions
+      // Setup progress bars if not already present
       labelContainer = document.getElementById("label-container");
-      labelContainer.innerHTML = "";
-      for (let i = 0; i < maxPredictions; i++) {
-        const labelDiv = document.createElement("div");
-        const progressDiv = document.createElement("div");
-        progressDiv.className = "progress-bar";
-        const fillDiv = document.createElement("div");
-        fillDiv.className = "progress-fill";
-        progressDiv.appendChild(fillDiv);
-        labelDiv.appendChild(progressDiv);
-        labelContainer.appendChild(labelDiv);
+      if (labelContainer.childNodes.length === 0) {
+        for (let i = 0; i < maxPredictions; i++) {
+          const labelDiv = document.createElement("div");
+          const progressDiv = document.createElement("div");
+          progressDiv.className = "progress-bar";
+          const fillDiv = document.createElement("div");
+          fillDiv.className = "progress-fill";
+          progressDiv.appendChild(fillDiv);
+          labelDiv.appendChild(progressDiv);
+          labelContainer.appendChild(labelDiv);
+        }
       }
     }
 
@@ -88,9 +99,11 @@
 
     document.getElementById("startBtn").addEventListener("click", async () => {
       const btn = document.getElementById("startBtn");
+      const cameraSelect = document.getElementById("cameraSelect");
+      const facingMode = cameraSelect.value; // user choice: "user" or "environment"
       btn.disabled = true;
       try {
-        await init();
+        await init(facingMode);
       } catch (err) {
         alert("Error starting camera/model: " + err.message);
         btn.disabled = false;
