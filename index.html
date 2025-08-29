@@ -25,9 +25,8 @@
   <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@latest"></script>
 
   <script>
-    // If you host model files in your repo root, use "./"
-    // Example for hosted Teachable Machine: "https://teachablemachine.withgoogle.com/models/YOUR_MODEL_ID/"
-    const URL = "./";
+    // Correct folder path to your model files
+    const URL = "./model/"; // model.json, metadata.json, and .bin files inside 'model' folder
 
     let model, webcam, labelContainer, maxPredictions;
 
@@ -76,7 +75,6 @@
 
     async function predict() {
       const prediction = await model.predict(webcam.canvas);
-      // Sort descending
       prediction.sort((a, b) => b.probability - a.probability);
 
       for (let i = 0; i < prediction.length; i++) {
