@@ -43,8 +43,8 @@
 
       maxPredictions = model.getTotalClasses();
 
-      // Initialize rear camera
-      webcam = new tmImage.Webcam(480, 360, false, "environment");
+      // Force rear camera
+      webcam = new tmImage.Webcam(480, 360, false, { facingMode: "environment" });
       await webcam.setup();
       await webcam.play();
       window.requestAnimationFrame(loop);
