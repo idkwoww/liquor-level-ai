@@ -24,6 +24,7 @@
   </select>
   <br>
   <button id="startBtn">Start Camera</button>
+  <button id="refreshBtn">Refresh Camera</button>
 
   <div id="webcam-container"></div>
   <div id="label-container"></div>
@@ -57,8 +58,13 @@
 
       // Initialize webcam with selected camera
       webcam = new tmImage.Webcam(480, 360, false, { facingMode });
-      await webcam.setup();
-      await webcam.play();
+      try {
+        await webcam.setup();
+        await webcam.play();
+      } catch (err) {
+        alert("Unable to access selected camera: " + err.message);
+        return;
+      }
       window.requestAnimationFrame(loop);
 
       document.getElementById("webcam-container").appendChild(webcam.canvas);
@@ -97,17 +103,17 @@
       }
     }
 
-    document.getElementById("startBtn").addEventListener("click", async () => {
-      const btn = document.getElementById("startBtn");
-      const cameraSelect = document.getElementById("cameraSelect");
-      const facingMode = cameraSelect.value; // user choice: "user" or "environment"
-      btn.disabled = true;
-      try {
-        await init(facingMode);
-      } catch (err) {
-        alert("Error starting camera/model: " + err.message);
-        btn.disabled = false;
-      }
+    const startBtn = document.getElementById("startBtn");
+    const refreshBtn = document.getElementById("refreshBtn");
+    const cameraSelect = document.getElementById("cameraSelect");
+
+    startBtn.addEventListener("click", async () => {
+      startBtn.disabled = true;
+      await init(cameraSelect.value);
+    });
+
+    refreshBtn.addEventListener("click", async () => {
+      await init(cameraSelect.value);
     });
   </script>
 </body>
