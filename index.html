@@ -1,23 +1,114 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-  <meta charset="UTF-8">
   <title>Liquor Bottle AI Test</title>
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.9.0"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@0.8/dist/teachablemachine-image.min.js"></script>
-  <style>
-    body { font-family: Arial, sans-serif; text-align: center; margin: 20px; }
-    video { border: 2px solid #333; border-radius: 8px; width: 90%; max-width: 400px; }
-    #results { margin-top: 20px; text-align: left; display: inline-block; }
-    button { margin: 10px; padding: 10px 20px; font-size: 16px; }
-  </style>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image"></script>
 </head>
 <body>
   <h1>Liquor Bottle AI Test</h1>
-  <video id="webcam" autoplay playsinline></video><br>
-  <button id="startBtn">Start Recording</button>
-  <button id="stopBtn" disabled>Stop Recording</button>
-  <div id="results"></div>
-
+  
+  <!-- Video -->
+  <video id="webcam" autoplay playsinline width="400" height="300"></video>
+  
+  <!-- Buttons -->
+  <div>
+    <button onclick="startRecording()">Start Recording</button>
+    <button onclick="stopRecording()">Stop Recording</button>
+  </div>
+  
+  <!-- Output -->
+  <div id="output"></div>
+  
   <script>
-    const URL = "./model/";
+    const modelURL = "model/";
+    let model, webcamStream, recording = false;
+    let predictionsLog = [];
+
+    async function initModel() {
+      model = await tmImage.load(modelURL + "model.json", modelURL + "metadata.json");
+      console.log("Model loaded.");
+    }
+
+    async function startRecording() {
+      if (!model) await initModel();
+
+      // Get camera stream
+      const constraints = {
+        audio: false,
+        video: {
+          facingMode: "environment" // try rear camera
+        }
+      };
+
+      try {
+        webcamStream = await navigator.mediaDevices.getUserMedia(constraints);
+        const webcamElement = document.getElementById("webcam");
+        webcamElement.srcObject = webcamStream;
+
+        recording = true;
+        predictionsLog = [];
+        runPredictionLoop();
+        console.log("Recording started.");
+      } catch (err) {
+        alert("Error starting camera: " + err.message);
+      }
+    }
+
+    async function runPredictionLoop() {
+      const webcamElement = document.getElementById("webcam");
+
+      while (recording) {
+        if (webcamElement.readyState === 4) {
+          const prediction = await model.predict(webcamElement);
+
+          // Store predictions
+          let result = {};
+          prediction.forEach(p => {
+            result[p.className] = p.probability;
+          });
+          predictionsLog.push(result);
+        }
+
+        await new Promise(resolve => setTimeout(resolve, 200)); // 5 fps
+      }
+    }
+
+    function stopRecording() {
+      recording = false;
+      if (webcamStream) {
+        webcamStream.getTracks().forEach(track => track.stop());
+      }
+
+      // Aggregate results
+      const outputDiv = document.getElementById("output");
+      outputDiv.innerHTML = "<h3>Results:</h3>";
+
+      if (predictionsLog.length === 0) {
+        outputDiv.innerHTML += "<p>No predictions recorded.</p>";
+        return;
+      }
+
+      // Average probabilities
+      let totals = {};
+      predictionsLog.forEach(pred => {
+        for (let label in pred) {
+          totals[label] = (totals[label] || 0) + pred[label];
+        }
+      });
+
+      let averages = {};
+      for (let label in totals) {
+        averages[label] = (totals[label] / predictionsLog.length * 100).toFixed(2);
+      }
+
+      // Show results
+      for (let label in averages) {
+        outputDiv.innerHTML += `<p>${label}: ${averages[label]}%</p>`;
+      }
+
+      console.log("Recording stopped. Results:", averages);
+    }
+  </script>
+</body>
+</html>
