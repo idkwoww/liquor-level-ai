@@ -2,108 +2,134 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Liquor Bottle AI</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Liquor Bottle AI Test</title>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.9.0"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@0.8/dist/teachablemachine-image.min.js"></script>
   <style>
-    body { font-family: Arial, sans-serif; text-align: center; margin: 0; padding: 20px; background: #f8f8f8; }
-    #webcam-container canvas { width: 90%; max-width: 500px; border-radius: 12px; border: 2px solid #333; margin-top: 10px; }
-    #progress-container { margin-top: 20px; max-width: 500px; margin-left: auto; margin-right: auto; text-align: left; }
-    .progress-bar { width: 100%; background-color: #ddd; border-radius: 10px; height: 25px; margin-top: 5px; }
-    .progress-fill { height: 100%; background-color: #4CAF50; border-radius: 10px; width: 0%; text-align: right; padding-right: 10px; color: white; font-weight: bold; line-height: 25px; }
-    select, button { padding: 12px 16px; font-size: 1rem; border-radius: 8px; cursor: pointer; margin-top: 10px; }
+    body { font-family: Arial, sans-serif; text-align: center; margin: 20px; }
+    video { border: 2px solid #333; border-radius: 8px; width: 90%; max-width: 400px; }
+    #results { margin-top: 20px; text-align: left; display: inline-block; }
+    button { margin: 10px; padding: 10px 20px; font-size: 16px; }
   </style>
 </head>
 <body>
   <h1>Liquor Bottle AI Test</h1>
-  <p>Select camera and tap "Start Camera" to scan a bottle.</p>
-
-  <label for="cameraSelect">Camera:</label>
-  <select id="cameraSelect">
-    <option value="environment" selected>Rear</option>
-    <option value="user">Front</option>
-  </select>
-  <br>
-  <button id="startBtn">Start Camera</button>
-  <button id="refreshBtn">Refresh Camera</button>
-
-  <div id="webcam-container"></div>
-  <div id="progress-container">
-    <div class="progress-bar">
-      <div class="progress-fill" id="liquidFill">0%</div>
-    </div>
-  </div>
-
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.21.0/dist/tf.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@0.8.4/dist/teachablemachine-image.min.js"></script>
+  <video id="webcam" autoplay playsinline></video><br>
+  <button id="startBtn">Start Recording</button>
+  <button id="stopBtn" disabled>Stop Recording</button>
+  <div id="results"></div>
 
   <script>
-    const URL = "./model/"; 
-    let model, webcam, maxPredictions;
-    const classMap = { "Empty": 0, "1/4 Full": 25, "1/2 Full": 50, "3/4 Full": 75, "Full": 100 };
-    let rollingPredictions = [];
+    const URL = "./model/"; // Path to your model
+    let model, webcam, ctx;
+    let recording = false;
+    let bottleSlots = 3; // number of bottles (camera view split into 3 columns)
+    let predictionsPerSlot = []; // stores frame-by-frame predictions
 
-    async function checkCameraAvailability(facingMode) {
-      if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) return false;
-      const devices = await navigator.mediaDevices.enumerateDevices();
-      return devices.some(d => d.kind === "videoinput" && d.label.toLowerCase().includes(facingMode === "environment" ? "back" : "front"));
-    }
-
-    async function init(facingMode = "environment") {
+    async function init() {
       const modelURL = URL + "model.json";
       const metadataURL = URL + "metadata.json";
+      model = await tmImage.load(modelURL, metadataURL);
 
-      try { if (!model) model = await tmImage.load(modelURL, metadataURL); } 
-      catch (err) { alert("Error loading model: " + err.message); return; }
+      // Setup webcam
+      webcam = new tmImage.Webcam(400, 300, true); // width, height, flip
+      await webcam.setup({ facingMode: "environment" }); 
+      await webcam.play();
+      document.getElementById("webcam").srcObject = webcam.webcam;
 
-      maxPredictions = model.getTotalClasses();
-
-      if (webcam) { webcam.stop(); document.getElementById("webcam-container").innerHTML = ""; }
-
-      const available = await checkCameraAvailability(facingMode);
-      if (!available) alert(`The ${facingMode === "environment" ? "rear" : "front"} camera is not available.`);
-
-      webcam = new tmImage.Webcam(480, 360, false, { facingMode });
-      try { await webcam.setup(); await webcam.play(); } 
-      catch (err) { alert("Unable to access selected camera: " + err.message); return; }
-
-      document.getElementById("webcam-container").appendChild(webcam.canvas);
+      // init storage
+      resetPredictions();
       window.requestAnimationFrame(loop);
+    }
+
+    function resetPredictions() {
+      predictionsPerSlot = Array.from({ length: bottleSlots }, () => []);
     }
 
     async function loop() {
       webcam.update();
-      await predict();
+      if (recording) {
+        await analyzeFrame();
+      }
       window.requestAnimationFrame(loop);
     }
 
-    async function predict() {
-      const prediction = await model.predict(webcam.canvas);
-      // Weighted average
-      let total = 0;
-      prediction.forEach(p => { total += (classMap[p.className] || 0) * p.probability; });
+    async function analyzeFrame() {
+      // Split the canvas into slots
+      const tempCanvas = document.createElement("canvas");
+      tempCanvas.width = webcam.canvas.width;
+      tempCanvas.height = webcam.canvas.height;
+      const tempCtx = tempCanvas.getContext("2d");
+      tempCtx.drawImage(webcam.canvas, 0, 0);
 
-      // Smooth with rolling average
-      rollingPredictions.push(total);
-      if (rollingPredictions.length > 5) rollingPredictions.shift();
-      const smoothPct = rollingPredictions.reduce((a,b)=>a+b,0) / rollingPredictions.length;
+      const slotWidth = tempCanvas.width / bottleSlots;
 
-      // Update progress bar
-      const fillDiv = document.getElementById("liquidFill");
-      fillDiv.style.width = smoothPct + "%";
-      fillDiv.textContent = `Liquid: ${smoothPct.toFixed(1)}%`;
+      for (let i = 0; i < bottleSlots; i++) {
+        const imageData = tempCtx.getImageData(i * slotWidth, 0, slotWidth, tempCanvas.height);
+
+        // make sub-canvas for prediction
+        const subCanvas = document.createElement("canvas");
+        subCanvas.width = slotWidth;
+        subCanvas.height = tempCanvas.height;
+        subCanvas.getContext("2d").putImageData(imageData, 0, 0);
+
+        const prediction = await model.predict(subCanvas);
+
+        // Save prediction for averaging
+        predictionsPerSlot[i].push(prediction);
+      }
     }
 
-    const startBtn = document.getElementById("startBtn");
-    const refreshBtn = document.getElementById("refreshBtn");
-    const cameraSelect = document.getElementById("cameraSelect");
+    function computeFinalResults() {
+      const resultsDiv = document.getElementById("results");
+      resultsDiv.innerHTML = "<h2>Final Results</h2>";
 
-    startBtn.addEventListener("click", async () => {
-      startBtn.disabled = true;
-      await init(cameraSelect.value);
-      startBtn.disabled = false;
-    });
+      predictionsPerSlot.forEach((slotPredictions, i) => {
+        if (slotPredictions.length === 0) {
+          resultsDiv.innerHTML += `<p>Bottle ${i+1}: No data</p>`;
+          return;
+        }
 
-    refreshBtn.addEventListener("click", async () => { await init(cameraSelect.value); });
+        // average across frames
+        const classAverages = {};
+        slotPredictions.forEach(predArr => {
+          predArr.forEach(pred => {
+            if (!classAverages[pred.className]) {
+              classAverages[pred.className] = [];
+            }
+            classAverages[pred.className].push(pred.probability);
+          });
+        });
+
+        // compute mean for each class
+        const averaged = Object.entries(classAverages).map(([cls, probs]) => {
+          const avg = probs.reduce((a,b) => a+b, 0) / probs.length;
+          return { className: cls, probability: avg };
+        });
+
+        // find best class
+        averaged.sort((a,b) => b.probability - a.probability);
+        const best = averaged[0];
+
+        resultsDiv.innerHTML += `<p>Bottle ${i+1}: <b>${best.className}</b> (avg ${(best.probability*100).toFixed(2)}%)</p>`;
+      });
+    }
+
+    document.getElementById("startBtn").onclick = () => {
+      resetPredictions();
+      recording = true;
+      document.getElementById("startBtn").disabled = true;
+      document.getElementById("stopBtn").disabled = false;
+    };
+
+    document.getElementById("stopBtn").onclick = () => {
+      recording = false;
+      computeFinalResults();
+      document.getElementById("startBtn").disabled = false;
+      document.getElementById("stopBtn").disabled = true;
+    };
+
+    init();
   </script>
 </body>
 </html>
