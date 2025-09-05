@@ -4,6 +4,11 @@
   <title>Liquor Bottle AI Test</title>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
   <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image"></script>
+  <style>
+    body { font-family: Arial, sans-serif; text-align: center; padding: 20px; }
+    video { border: 2px solid #333; border-radius: 8px; margin-top: 10px; }
+    #status { margin: 15px; font-weight: bold; color: darkblue; }
+  </style>
 </head>
 <body>
   <h1>Liquor Bottle AI Test</h1>
@@ -13,11 +18,12 @@
   
   <!-- Buttons -->
   <div>
-    <button onclick="startRecording()">Start Recording</button>
-    <button onclick="stopRecording()">Stop Recording</button>
+    <button id="startBtn">Start Recording</button>
+    <button id="stopBtn" disabled>Stop Recording</button>
   </div>
   
-  <!-- Output -->
+  <!-- Status + Output -->
+  <div id="status">Idle</div>
   <div id="output"></div>
   
   <script>
@@ -25,10 +31,20 @@
     let model, webcamStream, recording = false;
     let predictionsLog = [];
 
+    const startBtn = document.getElementById("startBtn");
+    const stopBtn = document.getElementById("stopBtn");
+    const statusDiv = document.getElementById("status");
+
     async function initModel() {
       if (!model) {
-        model = await tmImage.load(modelURL + "model.json", modelURL + "metadata.json");
-        console.log("Model loaded.");
+        statusDiv.textContent = "Loading model...";
+        try {
+          model = await tmImage.load(modelURL + "model.json", modelURL + "metadata.json");
+          statusDiv.textContent = "Model loaded.";
+        } catch (err) {
+          statusDiv.textContent = "Error loading model: " + err.message;
+          throw err;
+        }
       }
     }
 
@@ -37,7 +53,7 @@
 
       const constraints = {
         audio: false,
-        video: { facingMode: "environment" } // try rear, fallback front
+        video: { facingMode: { ideal: "environment" } } // rear preferred
       };
 
       try {
@@ -45,7 +61,6 @@
         webcamStream = await navigator.mediaDevices.getUserMedia(constraints);
         webcamElement.srcObject = webcamStream;
 
-        // Wait for video to be ready
         await new Promise(resolve => {
           webcamElement.onloadedmetadata = () => {
             webcamElement.play();
@@ -55,10 +70,14 @@
 
         recording = true;
         predictionsLog = [];
+        statusDiv.textContent = "Recording...";
+
+        startBtn.disabled = true;
+        stopBtn.disabled = false;
+
         runPredictionLoop();
-        console.log("Recording started.");
       } catch (err) {
-        alert("Camera error: " + err.message);
+        statusDiv.textContent = "Camera error: " + err.message;
         console.error(err);
       }
     }
@@ -68,15 +87,19 @@
 
       while (recording) {
         if (webcamElement.readyState === 4) {
-          const prediction = await model.predict(webcamElement);
+          try {
+            const prediction = await model.predict(webcamElement);
 
-          let result = {};
-          prediction.forEach(p => {
-            result[p.className] = p.probability;
-          });
-          predictionsLog.push(result);
+            let result = {};
+            prediction.forEach(p => {
+              result[p.className] = p.probability;
+            });
+            predictionsLog.push(result);
+          } catch (err) {
+            console.error("Prediction error:", err);
+          }
         }
-        await new Promise(resolve => setTimeout(resolve, 200)); // ~5 fps
+        await new Promise(resolve => setTimeout(resolve, 300)); // ~3 fps
       }
     }
 
@@ -85,6 +108,10 @@
       if (webcamStream) {
         webcamStream.getTracks().forEach(track => track.stop());
       }
+
+      startBtn.disabled = false;
+      stopBtn.disabled = true;
+      statusDiv.textContent = "Stopped.";
 
       const outputDiv = document.getElementById("output");
       outputDiv.innerHTML = "<h3>Results:</h3>";
@@ -112,6 +139,10 @@
 
       console.log("Recording stopped. Results:", averages);
     }
+
+    // Attach event listeners
+    startBtn.addEventListener("click", startRecording);
+    stopBtn.addEventListener("click", stopRecording);
   </script>
 </body>
 </html>
