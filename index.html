@@ -89,6 +89,63 @@
       const prediction = await model.predict(webcam.canvas);
       prediction.sort((a, b) => b.probability - a.probability);
 
+      // Update progress bars
       for (let i = 0; i < prediction.length; i++) {
         const fillDiv = labelContainer.childNodes[i].querySelector(".progress-fill");
-        const pct = (prediction[i].probability * 100).toFixed
+        const pct = (prediction[i].probability * 100).toFixed(1);
+        fillDiv.style.width = pct + "%";
+        fillDiv.textContent = `${prediction[i].className} ${pct}%`;
+      }
+
+      if (recording) {
+        recordedPredictions.push(prediction);
+
+        // 🔴 Log each frame to console
+        let frameLog = prediction.map(p => `${p.className}: ${(p.probability*100).toFixed(1)}%`).join(" | ");
+        console.log("Frame prediction:", frameLog);
+      }
+    }
+
+    // Buttons
+    document.getElementById("startBtn").addEventListener("click", async () => {
+      document.getElementById("startBtn").disabled = true;
+      await init();
+    });
+
+    document.getElementById("recordBtn").addEventListener("click", () => {
+      recording = true;
+      recordedPredictions = [];
+      document.getElementById("recordBtn").disabled = true;
+      document.getElementById("stopBtn").disabled = false;
+      console.log("Recording started...");
+    });
+
+    document.getElementById("stopBtn").addEventListener("click", () => {
+      recording = false;
+      document.getElementById("recordBtn").disabled = false;
+      document.getElementById("stopBtn").disabled = true;
+
+      if (recordedPredictions.length === 0) {
+        alert("Results: no predictions recorded");
+        return;
+      }
+
+      // Average probabilities across recording
+      let avg = {};
+      for (let preds of recordedPredictions) {
+        for (let p of preds) {
+          if (!avg[p.className]) avg[p.className] = [];
+          avg[p.className].push(p.probability);
+        }
+      }
+      let summary = "Results:\n";
+      for (let cls in avg) {
+        const mean = avg[cls].reduce((a, b) => a + b, 0) / avg[cls].length;
+        summary += `${cls}: ${(mean * 100).toFixed(1)}%\n`;
+      }
+      console.log("Recording stopped. Summary:", summary);
+      alert(summary);
+    });
+  </script>
+</body>
+</html>
