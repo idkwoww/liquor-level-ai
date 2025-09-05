@@ -26,32 +26,40 @@
     let predictionsLog = [];
 
     async function initModel() {
-      model = await tmImage.load(modelURL + "model.json", modelURL + "metadata.json");
-      console.log("Model loaded.");
+      if (!model) {
+        model = await tmImage.load(modelURL + "model.json", modelURL + "metadata.json");
+        console.log("Model loaded.");
+      }
     }
 
     async function startRecording() {
-      if (!model) await initModel();
+      await initModel();
 
-      // Get camera stream
       const constraints = {
         audio: false,
-        video: {
-          facingMode: "environment" // try rear camera
-        }
+        video: { facingMode: "environment" } // try rear, fallback front
       };
 
       try {
-        webcamStream = await navigator.mediaDevices.getUserMedia(constraints);
         const webcamElement = document.getElementById("webcam");
+        webcamStream = await navigator.mediaDevices.getUserMedia(constraints);
         webcamElement.srcObject = webcamStream;
+
+        // Wait for video to be ready
+        await new Promise(resolve => {
+          webcamElement.onloadedmetadata = () => {
+            webcamElement.play();
+            resolve();
+          };
+        });
 
         recording = true;
         predictionsLog = [];
         runPredictionLoop();
         console.log("Recording started.");
       } catch (err) {
-        alert("Error starting camera: " + err.message);
+        alert("Camera error: " + err.message);
+        console.error(err);
       }
     }
 
@@ -62,15 +70,13 @@
         if (webcamElement.readyState === 4) {
           const prediction = await model.predict(webcamElement);
 
-          // Store predictions
           let result = {};
           prediction.forEach(p => {
             result[p.className] = p.probability;
           });
           predictionsLog.push(result);
         }
-
-        await new Promise(resolve => setTimeout(resolve, 200)); // 5 fps
+        await new Promise(resolve => setTimeout(resolve, 200)); // ~5 fps
       }
     }
 
@@ -80,7 +86,6 @@
         webcamStream.getTracks().forEach(track => track.stop());
       }
 
-      // Aggregate results
       const outputDiv = document.getElementById("output");
       outputDiv.innerHTML = "<h3>Results:</h3>";
 
@@ -89,7 +94,6 @@
         return;
       }
 
-      // Average probabilities
       let totals = {};
       predictionsLog.forEach(pred => {
         for (let label in pred) {
@@ -102,7 +106,6 @@
         averages[label] = (totals[label] / predictionsLog.length * 100).toFixed(2);
       }
 
-      // Show results
       for (let label in averages) {
         outputDiv.innerHTML += `<p>${label}: ${averages[label]}%</p>`;
       }
