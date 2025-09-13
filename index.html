@@ -1,35 +1,219 @@
-// Store last N predictions to smooth results
-let predictionHistory = [];
-const historyLength = 10; // adjust: bigger = smoother but slower to react
-
-async function predict() {
-  const prediction = await model.predict(webcam.canvas);
-
-  // Find highest confidence class
-  let highest = prediction[0];
-  for (let i = 1; i < prediction.length; i++) {
-    if (prediction[i].probability > highest.probability) {
-      highest = prediction[i];
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Liquor Bottle AI Test</title>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@latest"></script>
+  <style>
+    body { font-family: Arial, sans-serif; text-align: center; background: #f8f8f8; }
+    #webcam-container { margin: 10px auto; }
+    #label-container { margin-top: 20px; font-size: 20px; font-weight: bold; }
+    .controls { margin: 15px; }
+    .progress-bar {
+      width: 80%;
+      max-width: 400px;
+      height: 24px;
+      background: #ddd;
+      border-radius: 12px;
+      margin: 15px auto;
+      overflow: hidden;
+      position: relative;
     }
-  }
+    .progress-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #4caf50, #81c784);
+      width: 0%;
+      text-align: right;
+      padding-right: 8px;
+      color: white;
+      font-weight: bold;
+      border-radius: 12px;
+      transition: width 0.2s ease-out;
+    }
+    table {
+      margin: 20px auto;
+      border-collapse: collapse;
+      width: 80%;
+      max-width: 600px;
+    }
+    th, td {
+      border: 1px solid #999;
+      padding: 8px 12px;
+      text-align: center;
+    }
+    th {
+      background: #4caf50;
+      color: white;
+    }
+  </style>
+</head>
+<body>
+  <h1>Liquor Bottle AI Test</h1>
 
-  // Add to history
-  predictionHistory.push(highest.className);
-  if (predictionHistory.length > historyLength) {
-    predictionHistory.shift();
-  }
+  <div class="controls">
+    <label for="cameraSelect">Select Camera: </label>
+    <select id="cameraSelect"></select>
+    <button onclick="refreshCamera()">Refresh Camera</button>
+  </div>
 
-  // Find most common class in history
-  let counts = {};
-  for (let c of predictionHistory) {
-    counts[c] = (counts[c] || 0) + 1;
-  }
-  let stableClass = Object.keys(counts).reduce((a, b) =>
-    counts[a] > counts[b] ? a : b
-  );
+  <div class="controls">
+    <label for="smoothingSelect">Smoothing (frames): </label>
+    <select id="smoothingSelect" onchange="updateHistoryLength()">
+      <option value="5">5</option>
+      <option value="10" selected>10</option>
+      <option value="15">15</option>
+      <option value="20">20</option>
+    </select>
+  </div>
 
-  // Show stable class instead of bouncing %s
-  document.getElementById("label-container").innerText = stableClass;
-  
-  window.requestAnimationFrame(predict);
-}
+  <div id="webcam-container"></div>
+  <div id="label-container">Loading...</div>
+
+  <div class="progress-bar">
+    <div class="progress-fill" id="progressFill">0%</div>
+  </div>
+
+  <div class="controls">
+    <button onclick="logPrediction()">Log Current Prediction</button>
+  </div>
+
+  <table id="scanLog">
+    <thead>
+      <tr>
+        <th>Time</th>
+        <th>Prediction</th>
+        <th>Probability</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+
+  <script>
+    const URL = "./model/";
+    let model, webcam, maxPredictions;
+
+    let predictionHistory = [];
+    let historyLength = 10;
+    let currentStableClass = '';
+    let currentAvgProb = 0;
+
+    async function init() {
+      const modelURL = URL + "model.json";
+      const metadataURL = URL + "metadata.json";
+
+      model = await tmImage.load(modelURL, metadataURL);
+      maxPredictions = model.getTotalClasses();
+
+      const flip = false;
+      webcam = new tmImage.Webcam(400, 400, flip);
+      await webcam.setup({ facingMode: "user" });
+      await webcam.play();
+      document.getElementById("webcam-container").appendChild(webcam.canvas);
+
+      window.requestAnimationFrame(loop);
+
+      await populateCameraOptions();
+    }
+
+    async function loop() {
+      webcam.update();
+      await predict();
+      window.requestAnimationFrame(loop);
+    }
+
+    async function predict() {
+      const prediction = await model.predict(webcam.canvas);
+
+      let highest = prediction[0];
+      for (let i = 1; i < prediction.length; i++) {
+        if (prediction[i].probability > highest.probability) {
+          highest = prediction[i];
+        }
+      }
+
+      predictionHistory.push(highest.className + "|" + highest.probability);
+      if (predictionHistory.length > historyLength) {
+        predictionHistory.shift();
+      }
+
+      let counts = {};
+      let probs = {};
+      for (let entry of predictionHistory) {
+        const [cls, prob] = entry.split("|");
+        counts[cls] = (counts[cls] || 0) + 1;
+        probs[cls] = (probs[cls] || 0) + parseFloat(prob);
+      }
+
+      currentStableClass = Object.keys(counts).reduce((a, b) =>
+        counts[a] > counts[b] ? a : b
+      );
+
+      currentAvgProb = (probs[currentStableClass] / counts[currentStableClass]) * 100;
+
+      document.getElementById("label-container").innerText =
+        `${currentStableClass} (${currentAvgProb.toFixed(1)}%)`;
+
+      const progressFill = document.getElementById("progressFill");
+      progressFill.style.width = currentAvgProb.toFixed(1) + "%";
+      progressFill.textContent = currentAvgProb.toFixed(1) + "%";
+    }
+
+    async function populateCameraOptions() {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const videoDevices = devices.filter(device => device.kind === 'videoinput');
+      const select = document.getElementById("cameraSelect");
+
+      select.innerHTML = "";
+      videoDevices.forEach((device, index) => {
+        const option = document.createElement("option");
+        option.value = device.deviceId;
+        option.text = `Camera ${index} (${device.label || "no label"})`;
+        select.appendChild(option);
+      });
+    }
+
+    async function refreshCamera() {
+      if (webcam) {
+        await webcam.stop();
+      }
+
+      const deviceId = document.getElementById("cameraSelect").value;
+      webcam = new tmImage.Webcam(400, 400, false);
+      await webcam.setup({ deviceId: { exact: deviceId } });
+      await webcam.play();
+
+      const container = document.getElementById("webcam-container");
+      container.innerHTML = "";
+      container.appendChild(webcam.canvas);
+    }
+
+    function updateHistoryLength() {
+      historyLength = parseInt(document.getElementById("smoothingSelect").value);
+      predictionHistory = [];
+    }
+
+    function logPrediction() {
+      const tableBody = document.getElementById("scanLog").querySelector("tbody");
+      const row = document.createElement("tr");
+
+      const now = new Date();
+      const timeCell = document.createElement("td");
+      timeCell.textContent = now.toLocaleTimeString();
+
+      const classCell = document.createElement("td");
+      classCell.textContent = currentStableClass;
+
+      const probCell = document.createElement("td");
+      probCell.textContent = currentAvgProb.toFixed(1) + "%";
+
+      row.appendChild(timeCell);
+      row.appendChild(classCell);
+      row.appendChild(probCell);
+      tableBody.appendChild(row);
+    }
+
+    init();
+  </script>
+</body>
+</html>
