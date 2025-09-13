@@ -1,126 +1,35 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <title>Bottle Level Detector</title>
-  <style>
-    body { font-family: Arial, sans-serif; text-align: center; }
-    video { width: 300px; height: auto; border: 1px solid black; margin-top: 10px; }
-    #label-container { margin-top: 20px; font-size: 20px; font-weight: bold; }
-    select, button { margin: 10px; padding: 8px; }
-  </style>
-</head>
-<body>
-  <h1>Bottle Level Detector</h1>
+// Store last N predictions to smooth results
+let predictionHistory = [];
+const historyLength = 10; // adjust: bigger = smoother but slower to react
 
-  <label for="cameraSelect">Choose camera:</label>
-  <select id="cameraSelect">
-    <option value="user">Front Camera</option>
-    <option value="environment">Rear Camera</option>
-  </select>
-  <button onclick="refreshCamera()">Switch Camera</button>
-  <button onclick="resetPrediction()">Reset</button>
+async function predict() {
+  const prediction = await model.predict(webcam.canvas);
 
-  <br><br>
-  <video id="webcam" autoplay playsinline muted></video>
-
-  <div id="label-container">Waiting for camera...</div>
-
-  <!-- TensorFlow.js -->
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.10.0"></script>
-  <!-- Local Teachable Machine -->
-  <script src="teachablemachine-image.min.js"></script>
-
-  <script>
-    const modelURL = "model/model.json";
-    const metadataURL = "model/metadata.json";
-    let model, webcamStream, labelContainer;
-
-    let predictionHistory = [];
-    let lockedResult = null;
-
-    const levelMap = {
-      "Full": 100,
-      "Three Quarter": 75,
-      "Half": 50,
-      "Quarter": 25,
-      "Empty": 0
-    };
-
-    async function init() {
-      model = await tmImage.load(modelURL, metadataURL);
-      labelContainer = document.getElementById("label-container");
-      startCamera("user"); // default front cam
+  // Find highest confidence class
+  let highest = prediction[0];
+  for (let i = 1; i < prediction.length; i++) {
+    if (prediction[i].probability > highest.probability) {
+      highest = prediction[i];
     }
+  }
 
-    async function startCamera(facingMode) {
-      if (webcamStream) {
-        webcamStream.getTracks().forEach(track => track.stop());
-      }
+  // Add to history
+  predictionHistory.push(highest.className);
+  if (predictionHistory.length > historyLength) {
+    predictionHistory.shift();
+  }
 
-      const constraints = { video: { facingMode: facingMode } };
+  // Find most common class in history
+  let counts = {};
+  for (let c of predictionHistory) {
+    counts[c] = (counts[c] || 0) + 1;
+  }
+  let stableClass = Object.keys(counts).reduce((a, b) =>
+    counts[a] > counts[b] ? a : b
+  );
 
-      try {
-        webcamStream = await navigator.mediaDevices.getUserMedia(constraints);
-        const videoElement = document.getElementById("webcam");
-        videoElement.srcObject = webcamStream;
-
-        videoElement.onloadeddata = () => {
-          predictLoop(videoElement);
-        };
-      } catch (err) {
-        alert("Camera error: " + err.message);
-      }
-    }
-
-    async function refreshCamera() {
-      const select = document.getElementById("cameraSelect");
-      startCamera(select.value);
-    }
-
-    function resetPrediction() {
-      lockedResult = null;
-      predictionHistory = [];
-      labelContainer.innerHTML = "Waiting for bottle...";
-    }
-
-    async function predictLoop(videoElement) {
-      while (true) {
-        if (!lockedResult) {
-          const prediction = await model.predict(videoElement);
-
-          // Best prediction
-          let best = prediction[0];
-          for (let p of prediction) {
-            if (p.probability > best.probability) best = p;
-          }
-
-          predictionHistory.push(best);
-          if (predictionHistory.length > 10) predictionHistory.shift();
-
-          const sameClassPreds = predictionHistory.filter(p => p.className === best.className);
-          const avgProb = sameClassPreds.reduce((sum, p) => sum + p.probability, 0) / sameClassPreds.length;
-
-          if (avgProb > 0.8) { // lock threshold
-            lockedResult = {
-              className: best.className,
-              percent: levelMap[best.className] || 0,
-              confidence: (avgProb * 100).toFixed(1)
-            };
-          }
-
-          if (!lockedResult) {
-            labelContainer.innerHTML = `Analyzing... Best guess: ${best.className} (${(avgProb*100).toFixed(1)}%)`;
-          }
-        } else {
-          labelContainer.innerHTML = `Bottle Level: ${lockedResult.percent}% (Locked at ${lockedResult.className}, ${lockedResult.confidence}% confident)`;
-        }
-
-        await tf.nextFrame();
-      }
-    }
-
-    init();
-  </script>
-</body>
-</html>
+  // Show stable class instead of bouncing %s
+  document.getElementById("label-container").innerText = stableClass;
+  
+  window.requestAnimationFrame(predict);
+}
