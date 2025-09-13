@@ -10,42 +10,6 @@
     #webcam-container { margin: 10px auto; }
     #label-container { margin-top: 20px; font-size: 20px; font-weight: bold; }
     .controls { margin: 15px; }
-    .progress-bar {
-      width: 80%;
-      max-width: 400px;
-      height: 24px;
-      background: #ddd;
-      border-radius: 12px;
-      margin: 15px auto;
-      overflow: hidden;
-      position: relative;
-    }
-    .progress-fill {
-      height: 100%;
-      background: linear-gradient(90deg, #4caf50, #81c784);
-      width: 0%;
-      text-align: right;
-      padding-right: 8px;
-      color: white;
-      font-weight: bold;
-      border-radius: 12px;
-      transition: width 0.2s ease-out;
-    }
-    table {
-      margin: 20px auto;
-      border-collapse: collapse;
-      width: 80%;
-      max-width: 600px;
-    }
-    th, td {
-      border: 1px solid #999;
-      padding: 8px 12px;
-      text-align: center;
-    }
-    th {
-      background: #4caf50;
-      color: white;
-    }
   </style>
 </head>
 <body>
@@ -70,25 +34,6 @@
   <div id="webcam-container"></div>
   <div id="label-container">Loading...</div>
 
-  <div class="progress-bar">
-    <div class="progress-fill" id="progressFill">0%</div>
-  </div>
-
-  <div class="controls">
-    <button onclick="logPrediction()">Log Current Prediction</button>
-  </div>
-
-  <table id="scanLog">
-    <thead>
-      <tr>
-        <th>Time</th>
-        <th>Prediction</th>
-        <th>Probability</th>
-      </tr>
-    </thead>
-    <tbody></tbody>
-  </table>
-
   <script>
     const URL = "./model/";
     let model, webcam, maxPredictions;
@@ -102,7 +47,13 @@
       const modelURL = URL + "model.json";
       const metadataURL = URL + "metadata.json";
 
-      model = await tmImage.load(modelURL, metadataURL);
+      try {
+        model = await tmImage.load(modelURL, metadataURL);
+      } catch (err) {
+        alert("Error loading model: " + err.message);
+        return;
+      }
+      
       maxPredictions = model.getTotalClasses();
 
       const flip = false;
@@ -153,10 +104,6 @@
 
       document.getElementById("label-container").innerText =
         `${currentStableClass} (${currentAvgProb.toFixed(1)}%)`;
-
-      const progressFill = document.getElementById("progressFill");
-      progressFill.style.width = currentAvgProb.toFixed(1) + "%";
-      progressFill.textContent = currentAvgProb.toFixed(1) + "%";
     }
 
     async function populateCameraOptions() {
@@ -191,26 +138,6 @@
     function updateHistoryLength() {
       historyLength = parseInt(document.getElementById("smoothingSelect").value);
       predictionHistory = [];
-    }
-
-    function logPrediction() {
-      const tableBody = document.getElementById("scanLog").querySelector("tbody");
-      const row = document.createElement("tr");
-
-      const now = new Date();
-      const timeCell = document.createElement("td");
-      timeCell.textContent = now.toLocaleTimeString();
-
-      const classCell = document.createElement("td");
-      classCell.textContent = currentStableClass;
-
-      const probCell = document.createElement("td");
-      probCell.textContent = currentAvgProb.toFixed(1) + "%";
-
-      row.appendChild(timeCell);
-      row.appendChild(classCell);
-      row.appendChild(probCell);
-      tableBody.appendChild(row);
     }
 
     init();
