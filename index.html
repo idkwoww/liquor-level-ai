@@ -19,6 +19,7 @@
     <option value="environment">Rear Camera</option>
   </select>
   <button onclick="refreshCamera()">Switch Camera</button>
+  <button onclick="resetPrediction()">Reset</button>
 
   <br><br>
   <video id="webcam" autoplay playsinline muted></video>
@@ -35,15 +36,21 @@
     const metadataURL = "model/metadata.json";
     let model, webcamStream, labelContainer;
 
-    // Keep a rolling history of last 10 predictions for smoothing
     let predictionHistory = [];
+    let lockedResult = null;
+
+    const levelMap = {
+      "Full": 100,
+      "Three Quarter": 75,
+      "Half": 50,
+      "Quarter": 25,
+      "Empty": 0
+    };
 
     async function init() {
       model = await tmImage.load(modelURL, metadataURL);
       labelContainer = document.getElementById("label-container");
-
-      // Default: front camera
-      startCamera("user");
+      startCamera("user"); // default front cam
     }
 
     async function startCamera(facingMode) {
@@ -51,9 +58,7 @@
         webcamStream.getTracks().forEach(track => track.stop());
       }
 
-      const constraints = {
-        video: { facingMode: facingMode }
-      };
+      const constraints = { video: { facingMode: facingMode } };
 
       try {
         webcamStream = await navigator.mediaDevices.getUserMedia(constraints);
@@ -73,30 +78,43 @@
       startCamera(select.value);
     }
 
+    function resetPrediction() {
+      lockedResult = null;
+      predictionHistory = [];
+      labelContainer.innerHTML = "Waiting for bottle...";
+    }
+
     async function predictLoop(videoElement) {
       while (true) {
-        const prediction = await model.predict(videoElement);
+        if (!lockedResult) {
+          const prediction = await model.predict(videoElement);
 
-        // Find the most confident prediction
-        let best = prediction[0];
-        for (let p of prediction) {
-          if (p.probability > best.probability) {
-            best = p;
+          // Best prediction
+          let best = prediction[0];
+          for (let p of prediction) {
+            if (p.probability > best.probability) best = p;
           }
+
+          predictionHistory.push(best);
+          if (predictionHistory.length > 10) predictionHistory.shift();
+
+          const sameClassPreds = predictionHistory.filter(p => p.className === best.className);
+          const avgProb = sameClassPreds.reduce((sum, p) => sum + p.probability, 0) / sameClassPreds.length;
+
+          if (avgProb > 0.8) { // lock threshold
+            lockedResult = {
+              className: best.className,
+              percent: levelMap[best.className] || 0,
+              confidence: (avgProb * 100).toFixed(1)
+            };
+          }
+
+          if (!lockedResult) {
+            labelContainer.innerHTML = `Analyzing... Best guess: ${best.className} (${(avgProb*100).toFixed(1)}%)`;
+          }
+        } else {
+          labelContainer.innerHTML = `Bottle Level: ${lockedResult.percent}% (Locked at ${lockedResult.className}, ${lockedResult.confidence}% confident)`;
         }
-
-        // Add to history (keep last 10)
-        predictionHistory.push(best);
-        if (predictionHistory.length > 10) {
-          predictionHistory.shift();
-        }
-
-        // Compute average probability for the current best class
-        const sameClassPreds = predictionHistory.filter(p => p.className === best.className);
-        const avgProb = sameClassPreds.reduce((sum, p) => sum + p.probability, 0) / sameClassPreds.length;
-
-        const percent = (avgProb * 100).toFixed(2);
-        labelContainer.innerHTML = `Most likely: ${best.className} (${percent}%)`;
 
         await tf.nextFrame();
       }
