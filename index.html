@@ -35,6 +35,9 @@
     const metadataURL = "model/metadata.json";
     let model, webcamStream, labelContainer;
 
+    // Keep a rolling history of last 10 predictions for smoothing
+    let predictionHistory = [];
+
     async function init() {
       model = await tmImage.load(modelURL, metadataURL);
       labelContainer = document.getElementById("label-container");
@@ -82,7 +85,17 @@
           }
         }
 
-        const percent = (best.probability * 100).toFixed(2);
+        // Add to history (keep last 10)
+        predictionHistory.push(best);
+        if (predictionHistory.length > 10) {
+          predictionHistory.shift();
+        }
+
+        // Compute average probability for the current best class
+        const sameClassPreds = predictionHistory.filter(p => p.className === best.className);
+        const avgProb = sameClassPreds.reduce((sum, p) => sum + p.probability, 0) / sameClassPreds.length;
+
+        const percent = (avgProb * 100).toFixed(2);
         labelContainer.innerHTML = `Most likely: ${best.className} (${percent}%)`;
 
         await tf.nextFrame();
