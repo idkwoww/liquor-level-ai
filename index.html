@@ -1,25 +1,107 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <meta charset="utf-8">
-  <title>TM Test Local</title>
+  <meta charset="UTF-8">
+  <title>Bottle Level Detector</title>
+  <style>
+    body { font-family: Arial, sans-serif; text-align: center; }
+    video { width: 300px; height: auto; border: 1px solid black; margin-top: 10px; }
+    #label-container { margin-top: 20px; font-size: 18px; }
+  </style>
 </head>
 <body>
-  <h1>Test Teachable Machine Local</h1>
-  <button onclick="testTM()">Check TM</button>
+  <h1>Bottle Level Detector</h1>
 
-  <!-- TensorFlow.js from CDN -->
+  <label for="cameraSelect">Choose camera:</label>
+  <select id="cameraSelect"></select>
+  <button onclick="refreshCamera()">Refresh Camera</button>
+
+  <br><br>
+  <video id="webcam" autoplay playsinline muted></video>
+
+  <div id="label-container"></div>
+
+  <!-- TensorFlow.js -->
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.10.0"></script>
-
   <!-- Local Teachable Machine -->
   <script src="teachablemachine-image.min.js"></script>
 
   <script>
-    function testTM() {
-      console.log("tf:", typeof tf);
-      console.log("tmImage:", typeof tmImage);
-      alert("tf: " + typeof tf + " | tmImage: " + typeof tmImage);
+    const modelURL = "model/model.json";
+    const metadataURL = "model/metadata.json";
+    let model, webcamStream, labelContainer, maxPredictions;
+
+    async function init() {
+      model = await tmImage.load(modelURL, metadataURL);
+      maxPredictions = model.getTotalClasses();
+      labelContainer = document.getElementById("label-container");
+
+      await listCameras();
     }
+
+    async function listCameras() {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const select = document.getElementById("cameraSelect");
+      select.innerHTML = "";
+
+      devices.forEach(device => {
+        if (device.kind === "videoinput") {
+          const option = document.createElement("option");
+          option.value = device.deviceId;
+          option.text = device.label || `Camera ${select.length + 1}`;
+          select.appendChild(option);
+        }
+      });
+
+      if (select.options.length > 0) {
+        startCamera(select.value);
+      }
+    }
+
+    async function startCamera(deviceId) {
+      if (webcamStream) {
+        webcamStream.getTracks().forEach(track => track.stop());
+      }
+
+      const constraints = {
+        video: {
+          deviceId: { exact: deviceId }
+        }
+      };
+
+      webcamStream = await navigator.mediaDevices.getUserMedia(constraints);
+      const videoElement = document.getElementById("webcam");
+      videoElement.srcObject = webcamStream;
+
+      videoElement.onloadeddata = () => {
+        predictLoop(videoElement);
+      };
+    }
+
+    async function refreshCamera() {
+      const select = document.getElementById("cameraSelect");
+      if (select.value) {
+        startCamera(select.value);
+      }
+    }
+
+    async function predictLoop(videoElement) {
+      while (true) {
+        const prediction = await model.predict(videoElement);
+
+        let output = "";
+        prediction.forEach(p => {
+          const percent = (p.probability * 100).toFixed(2);
+          output += `${p.className}: ${percent}%<br>`;
+        });
+
+        labelContainer.innerHTML = output;
+
+        await tf.nextFrame();
+      }
+    }
+
+    init();
   </script>
 </body>
 </html>
