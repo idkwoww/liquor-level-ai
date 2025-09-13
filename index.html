@@ -6,20 +6,24 @@
   <style>
     body { font-family: Arial, sans-serif; text-align: center; }
     video { width: 300px; height: auto; border: 1px solid black; margin-top: 10px; }
-    #label-container { margin-top: 20px; font-size: 18px; }
+    #label-container { margin-top: 20px; font-size: 20px; font-weight: bold; }
+    select, button { margin: 10px; padding: 8px; }
   </style>
 </head>
 <body>
   <h1>Bottle Level Detector</h1>
 
   <label for="cameraSelect">Choose camera:</label>
-  <select id="cameraSelect"></select>
-  <button onclick="refreshCamera()">Refresh Camera</button>
+  <select id="cameraSelect">
+    <option value="user">Front Camera</option>
+    <option value="environment">Rear Camera</option>
+  </select>
+  <button onclick="refreshCamera()">Switch Camera</button>
 
   <br><br>
   <video id="webcam" autoplay playsinline muted></video>
 
-  <div id="label-container"></div>
+  <div id="label-container">Waiting for camera...</div>
 
   <!-- TensorFlow.js -->
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.10.0"></script>
@@ -29,73 +33,57 @@
   <script>
     const modelURL = "model/model.json";
     const metadataURL = "model/metadata.json";
-    let model, webcamStream, labelContainer, maxPredictions;
+    let model, webcamStream, labelContainer;
 
     async function init() {
       model = await tmImage.load(modelURL, metadataURL);
-      maxPredictions = model.getTotalClasses();
       labelContainer = document.getElementById("label-container");
 
-      await listCameras();
+      // Default: front camera
+      startCamera("user");
     }
 
-    async function listCameras() {
-      const devices = await navigator.mediaDevices.enumerateDevices();
-      const select = document.getElementById("cameraSelect");
-      select.innerHTML = "";
-
-      devices.forEach(device => {
-        if (device.kind === "videoinput") {
-          const option = document.createElement("option");
-          option.value = device.deviceId;
-          option.text = device.label || `Camera ${select.length + 1}`;
-          select.appendChild(option);
-        }
-      });
-
-      if (select.options.length > 0) {
-        startCamera(select.value);
-      }
-    }
-
-    async function startCamera(deviceId) {
+    async function startCamera(facingMode) {
       if (webcamStream) {
         webcamStream.getTracks().forEach(track => track.stop());
       }
 
       const constraints = {
-        video: {
-          deviceId: { exact: deviceId }
-        }
+        video: { facingMode: facingMode }
       };
 
-      webcamStream = await navigator.mediaDevices.getUserMedia(constraints);
-      const videoElement = document.getElementById("webcam");
-      videoElement.srcObject = webcamStream;
+      try {
+        webcamStream = await navigator.mediaDevices.getUserMedia(constraints);
+        const videoElement = document.getElementById("webcam");
+        videoElement.srcObject = webcamStream;
 
-      videoElement.onloadeddata = () => {
-        predictLoop(videoElement);
-      };
+        videoElement.onloadeddata = () => {
+          predictLoop(videoElement);
+        };
+      } catch (err) {
+        alert("Camera error: " + err.message);
+      }
     }
 
     async function refreshCamera() {
       const select = document.getElementById("cameraSelect");
-      if (select.value) {
-        startCamera(select.value);
-      }
+      startCamera(select.value);
     }
 
     async function predictLoop(videoElement) {
       while (true) {
         const prediction = await model.predict(videoElement);
 
-        let output = "";
-        prediction.forEach(p => {
-          const percent = (p.probability * 100).toFixed(2);
-          output += `${p.className}: ${percent}%<br>`;
-        });
+        // Find the most confident prediction
+        let best = prediction[0];
+        for (let p of prediction) {
+          if (p.probability > best.probability) {
+            best = p;
+          }
+        }
 
-        labelContainer.innerHTML = output;
+        const percent = (best.probability * 100).toFixed(2);
+        labelContainer.innerHTML = `Most likely: ${best.className} (${percent}%)`;
 
         await tf.nextFrame();
       }
