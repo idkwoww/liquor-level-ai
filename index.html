@@ -1,151 +1,25 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-  <meta charset="UTF-8" />
-  <title>Liquor Bottle AI Test</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <style>
-    body { font-family: Arial, sans-serif; text-align: center; margin: 0; padding: 20px; background: #f8f8f8; }
-    #webcam-container canvas { width: 90%; max-width: 500px; border-radius: 12px; border: 2px solid #333; margin-top: 10px; }
-    #label-container { margin-top: 20px; font-size: 1.1em; text-align: left; max-width: 500px; margin-left: auto; margin-right: auto; }
-    button { padding: 12px 16px; font-size: 1rem; border-radius: 8px; cursor: pointer; margin: 5px; }
-    .progress-bar { width: 100%; background-color: #ddd; border-radius: 10px; margin-top: 5px; height: 18px; }
-    .progress-fill { height: 100%; background-color: #4CAF50; border-radius: 10px; width: 0%; text-align: right; padding-right: 5px; color: white; font-weight: bold; }
-  </style>
+  <meta charset="utf-8">
+  <title>TM Test Local</title>
 </head>
 <body>
-  <h1>Liquor Bottle AI Test</h1>
-  <p>Tap the button to start your camera and scan bottles.</p>
-  <button id="startBtn">Start Camera</button>
-  <button id="recordBtn" disabled>Start Recording</button>
-  <button id="stopBtn" disabled>Stop Recording</button>
+  <h1>Test Teachable Machine Local</h1>
+  <button onclick="testTM()">Check TM</button>
 
-  <div id="webcam-container"></div>
-  <div id="label-container"></div>
+  <!-- TensorFlow.js from CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.10.0"></script>
 
-  <!-- TensorFlow.js -->
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest"></script>
-  <!-- Teachable Machine Image library -->
-  <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@latest"></script>
+  <!-- Local Teachable Machine -->
+  <script src="teachablemachine-image.min.js"></script>
 
-  <!-- Your custom script -->
   <script>
-    console.log("tf:", typeof tf);
-    console.log("tmImage:", typeof tmImage);
-
-    const URL = "./model/";
-
-    let model, webcam, labelContainer, maxPredictions;
-    let recording = false;
-    let recordedPredictions = [];
-
-    async function init() {
-      const modelURL = URL + "model.json";
-      const metadataURL = URL + "metadata.json";
-
-      try {
-        model = await tmImage.load(modelURL, metadataURL);
-        alert("Model loaded!");
-      } catch (err) {
-        alert("Error loading model: " + err.message);
-        return;
-      }
-
-      maxPredictions = model.getTotalClasses();
-
-      // Rear camera request
-      webcam = new tmImage.Webcam(480, 360, false);
-      await webcam.setup({ facingMode: "environment" });
-      await webcam.play();
-      window.requestAnimationFrame(loop);
-
-      const webcamContainer = document.getElementById("webcam-container");
-      webcamContainer.innerHTML = "";
-      webcamContainer.appendChild(webcam.canvas);
-
-      labelContainer = document.getElementById("label-container");
-      labelContainer.innerHTML = "";
-      for (let i = 0; i < maxPredictions; i++) {
-        const labelDiv = document.createElement("div");
-        const progressDiv = document.createElement("div");
-        progressDiv.className = "progress-bar";
-        const fillDiv = document.createElement("div");
-        fillDiv.className = "progress-fill";
-        progressDiv.appendChild(fillDiv);
-        labelDiv.appendChild(progressDiv);
-        labelContainer.appendChild(labelDiv);
-      }
-
-      document.getElementById("recordBtn").disabled = false;
+    function testTM() {
+      console.log("tf:", typeof tf);
+      console.log("tmImage:", typeof tmImage);
+      alert("tf: " + typeof tf + " | tmImage: " + typeof tmImage);
     }
-
-    async function loop() {
-      webcam.update();
-      await predict();
-      window.requestAnimationFrame(loop);
-    }
-
-    async function predict() {
-      const prediction = await model.predict(webcam.canvas);
-      prediction.sort((a, b) => b.probability - a.probability);
-
-      // Update progress bars
-      for (let i = 0; i < prediction.length; i++) {
-        const fillDiv = labelContainer.childNodes[i].querySelector(".progress-fill");
-        const pct = (prediction[i].probability * 100).toFixed(1);
-        fillDiv.style.width = pct + "%";
-        fillDiv.textContent = `${prediction[i].className} ${pct}%`;
-      }
-
-      if (recording) {
-        recordedPredictions.push(prediction);
-
-        // 🔴 Log each frame to console
-        let frameLog = prediction.map(p => `${p.className}: ${(p.probability*100).toFixed(1)}%`).join(" | ");
-        console.log("Frame prediction:", frameLog);
-      }
-    }
-
-    // Buttons
-    document.getElementById("startBtn").addEventListener("click", async () => {
-      document.getElementById("startBtn").disabled = true;
-      await init();
-    });
-
-    document.getElementById("recordBtn").addEventListener("click", () => {
-      recording = true;
-      recordedPredictions = [];
-      document.getElementById("recordBtn").disabled = true;
-      document.getElementById("stopBtn").disabled = false;
-      console.log("Recording started...");
-    });
-
-    document.getElementById("stopBtn").addEventListener("click", () => {
-      recording = false;
-      document.getElementById("recordBtn").disabled = false;
-      document.getElementById("stopBtn").disabled = true;
-
-      if (recordedPredictions.length === 0) {
-        alert("Results: no predictions recorded");
-        return;
-      }
-
-      // Average probabilities across recording
-      let avg = {};
-      for (let preds of recordedPredictions) {
-        for (let p of preds) {
-          if (!avg[p.className]) avg[p.className] = [];
-          avg[p.className].push(p.probability);
-        }
-      }
-      let summary = "Results:\n";
-      for (let cls in avg) {
-        const mean = avg[cls].reduce((a, b) => a + b, 0) / avg[cls].length;
-        summary += `${cls}: ${(mean * 100).toFixed(1)}%\n`;
-      }
-      console.log("Recording stopped. Summary:", summary);
-      alert(summary);
-    });
   </script>
 </body>
 </html>
