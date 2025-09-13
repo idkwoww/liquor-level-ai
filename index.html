@@ -3,9 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <title>Liquor Bottle AI Test</title>
-  <!-- TensorFlow.js -->
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest"></script>
-  <!-- Teachable Machine Image Library -->
   <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@0.8.4/dist/teachablemachine-image.min.js"></script>
   <style>
     body { font-family: Arial, sans-serif; text-align: center; background: #f8f8f8; }
@@ -16,6 +14,12 @@
 </head>
 <body>
   <h1>Liquor Bottle AI Test</h1>
+
+  <div class="controls">
+    <label for="cameraSelect">Select Camera: </label>
+    <select id="cameraSelect"></select>
+    <button onclick="refreshCamera()">Refresh Camera</button>
+  </div>
 
   <div id="webcam-container"></div>
   <div id="label-container">Loading...</div>
@@ -49,6 +53,7 @@
       document.getElementById("webcam-container").appendChild(webcam.canvas);
 
       window.requestAnimationFrame(loop);
+      await populateCameraOptions();
     }
 
     async function loop() {
@@ -88,6 +93,33 @@
 
       document.getElementById("label-container").innerText =
         `${currentStableClass} (${currentAvgProb.toFixed(1)}%)`;
+    }
+
+    async function populateCameraOptions() {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const videoDevices = devices.filter(device => device.kind === 'videoinput');
+      const select = document.getElementById("cameraSelect");
+
+      select.innerHTML = "";
+      videoDevices.forEach((device, index) => {
+        const option = document.createElement("option");
+        option.value = device.deviceId;
+        option.text = device.label || `Camera ${index}`;
+        select.appendChild(option);
+      });
+    }
+
+    async function refreshCamera() {
+      if (webcam) await webcam.stop();
+
+      const deviceId = document.getElementById("cameraSelect").value;
+      webcam = new tmImage.Webcam(400, 400, false);
+      await webcam.setup({ deviceId: { exact: deviceId } });
+      await webcam.play();
+
+      const container = document.getElementById("webcam-container");
+      container.innerHTML = "";
+      container.appendChild(webcam.canvas);
     }
 
     init();
