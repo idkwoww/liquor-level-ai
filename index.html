@@ -2,142 +2,122 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Liquor Bottle AI Test</title>
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@latest"></script>
+  <title>Bottle Level Detector</title>
   <style>
-    body { font-family: Arial, sans-serif; text-align: center; background: #f8f8f8; }
-    #webcam-container { margin: 10px auto; }
+    body { font-family: Arial, sans-serif; text-align: center; }
+    video { width: 300px; height: auto; border: 1px solid black; margin-top: 10px; }
     #label-container { margin-top: 20px; font-size: 20px; font-weight: bold; }
-    .controls { margin: 15px; }
+    select, button { margin: 10px; padding: 8px; }
   </style>
 </head>
 <body>
-  <h1>Liquor Bottle AI Test</h1>
+  <h1>Bottle Level Detector</h1>
 
-  <div class="controls">
-    <label for="cameraSelect">Select Camera: </label>
-    <select id="cameraSelect"></select>
-    <button onclick="refreshCamera()">Refresh Camera</button>
-  </div>
+  <label for="cameraSelect">Choose camera:</label>
+  <select id="cameraSelect">
+    <option value="user">Front Camera</option>
+    <option value="environment">Rear Camera</option>
+  </select>
+  <button onclick="refreshCamera()">Switch Camera</button>
+  <button onclick="resetPrediction()">Reset</button>
 
-  <div class="controls">
-    <label for="smoothingSelect">Smoothing (frames): </label>
-    <select id="smoothingSelect" onchange="updateHistoryLength()">
-      <option value="5">5</option>
-      <option value="10" selected>10</option>
-      <option value="15">15</option>
-      <option value="20">20</option>
-    </select>
-  </div>
+  <br><br>
+  <video id="webcam" autoplay playsinline muted></video>
 
-  <div id="webcam-container"></div>
-  <div id="label-container">Loading...</div>
+  <div id="label-container">Waiting for camera...</div>
+
+  <!-- TensorFlow.js -->
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.10.0"></script>
+  <!-- Local Teachable Machine -->
+  <script src="teachablemachine-image.min.js"></script>
 
   <script>
-    const URL = "./model/";
-    let model, webcam, maxPredictions;
+    const modelURL = "model/model.json";
+    const metadataURL = "model/metadata.json";
+    let model, webcamStream, labelContainer;
 
     let predictionHistory = [];
-    let historyLength = 10;
-    let currentStableClass = '';
-    let currentAvgProb = 0;
+    let lockedResult = null;
+
+    const levelMap = {
+      "Full": 100,
+      "Three Quarter": 75,
+      "Half": 50,
+      "Quarter": 25,
+      "Empty": 0
+    };
 
     async function init() {
-      const modelURL = URL + "model.json";
-      const metadataURL = URL + "metadata.json";
+      model = await tmImage.load(modelURL, metadataURL);
+      labelContainer = document.getElementById("label-container");
+      startCamera("user"); // default front cam
+    }
+
+    async function startCamera(facingMode) {
+      if (webcamStream) {
+        webcamStream.getTracks().forEach(track => track.stop());
+      }
+
+      const constraints = { video: { facingMode: facingMode } };
 
       try {
-        model = await tmImage.load(modelURL, metadataURL);
+        webcamStream = await navigator.mediaDevices.getUserMedia(constraints);
+        const videoElement = document.getElementById("webcam");
+        videoElement.srcObject = webcamStream;
+
+        videoElement.onloadeddata = () => {
+          predictLoop(videoElement);
+        };
       } catch (err) {
-        alert("Error loading model: " + err.message);
-        return;
+        alert("Camera error: " + err.message);
       }
-      
-      maxPredictions = model.getTotalClasses();
-
-      const flip = false;
-      webcam = new tmImage.Webcam(400, 400, flip);
-      await webcam.setup({ facingMode: "user" });
-      await webcam.play();
-      document.getElementById("webcam-container").appendChild(webcam.canvas);
-
-      window.requestAnimationFrame(loop);
-
-      await populateCameraOptions();
-    }
-
-    async function loop() {
-      webcam.update();
-      await predict();
-      window.requestAnimationFrame(loop);
-    }
-
-    async function predict() {
-      const prediction = await model.predict(webcam.canvas);
-
-      let highest = prediction[0];
-      for (let i = 1; i < prediction.length; i++) {
-        if (prediction[i].probability > highest.probability) {
-          highest = prediction[i];
-        }
-      }
-
-      predictionHistory.push(highest.className + "|" + highest.probability);
-      if (predictionHistory.length > historyLength) {
-        predictionHistory.shift();
-      }
-
-      let counts = {};
-      let probs = {};
-      for (let entry of predictionHistory) {
-        const [cls, prob] = entry.split("|");
-        counts[cls] = (counts[cls] || 0) + 1;
-        probs[cls] = (probs[cls] || 0) + parseFloat(prob);
-      }
-
-      currentStableClass = Object.keys(counts).reduce((a, b) =>
-        counts[a] > counts[b] ? a : b
-      );
-
-      currentAvgProb = (probs[currentStableClass] / counts[currentStableClass]) * 100;
-
-      document.getElementById("label-container").innerText =
-        `${currentStableClass} (${currentAvgProb.toFixed(1)}%)`;
-    }
-
-    async function populateCameraOptions() {
-      const devices = await navigator.mediaDevices.enumerateDevices();
-      const videoDevices = devices.filter(device => device.kind === 'videoinput');
-      const select = document.getElementById("cameraSelect");
-
-      select.innerHTML = "";
-      videoDevices.forEach((device, index) => {
-        const option = document.createElement("option");
-        option.value = device.deviceId;
-        option.text = `Camera ${index} (${device.label || "no label"})`;
-        select.appendChild(option);
-      });
     }
 
     async function refreshCamera() {
-      if (webcam) {
-        await webcam.stop();
-      }
-
-      const deviceId = document.getElementById("cameraSelect").value;
-      webcam = new tmImage.Webcam(400, 400, false);
-      await webcam.setup({ deviceId: { exact: deviceId } });
-      await webcam.play();
-
-      const container = document.getElementById("webcam-container");
-      container.innerHTML = "";
-      container.appendChild(webcam.canvas);
+      const select = document.getElementById("cameraSelect");
+      startCamera(select.value);
     }
 
-    function updateHistoryLength() {
-      historyLength = parseInt(document.getElementById("smoothingSelect").value);
+    function resetPrediction() {
+      lockedResult = null;
       predictionHistory = [];
+      labelContainer.innerHTML = "Waiting for bottle...";
+    }
+
+    async function predictLoop(videoElement) {
+      while (true) {
+        if (!lockedResult) {
+          const prediction = await model.predict(videoElement);
+
+          // Best prediction
+          let best = prediction[0];
+          for (let p of prediction) {
+            if (p.probability > best.probability) best = p;
+          }
+
+          predictionHistory.push(best);
+          if (predictionHistory.length > 10) predictionHistory.shift();
+
+          const sameClassPreds = predictionHistory.filter(p => p.className === best.className);
+          const avgProb = sameClassPreds.reduce((sum, p) => sum + p.probability, 0) / sameClassPreds.length;
+
+          if (avgProb > 0.8) { // lock threshold
+            lockedResult = {
+              className: best.className,
+              percent: levelMap[best.className] || 0,
+              confidence: (avgProb * 100).toFixed(1)
+            };
+          }
+
+          if (!lockedResult) {
+            labelContainer.innerHTML = `Analyzing... Best guess: ${best.className} (${(avgProb*100).toFixed(1)}%)`;
+          }
+        } else {
+          labelContainer.innerHTML = `Bottle Level: ${lockedResult.percent}% (Locked at ${lockedResult.className}, ${lockedResult.confidence}% confident)`;
+        }
+
+        await tf.nextFrame();
+      }
     }
 
     init();
