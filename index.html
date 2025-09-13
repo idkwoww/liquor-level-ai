@@ -3,7 +3,9 @@
 <head>
   <meta charset="UTF-8">
   <title>Liquor Bottle AI Test</title>
+  <!-- TensorFlow.js -->
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest"></script>
+  <!-- Teachable Machine Image Library (fixed version for tmImage) -->
   <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@0.8.4/dist/teachablemachine-image.min.js"></script>
   <style>
     body { font-family: Arial, sans-serif; text-align: center; background: #f8f8f8; }
@@ -16,19 +18,26 @@
   <h1>Liquor Bottle AI Test</h1>
 
   <div class="controls">
-    <label for="cameraSelect">Camera: </label>
-    <select id="cameraSelect">
-      <option value="user">Front</option>
-      <option value="environment">Rear</option>
-    </select>
+    <label for="cameraSelect">Select Camera: </label>
+    <select id="cameraSelect"></select>
     <button onclick="refreshCamera()">Refresh Camera</button>
+  </div>
+
+  <div class="controls">
+    <label for="smoothingSelect">Smoothing (frames): </label>
+    <select id="smoothingSelect" onchange="updateHistoryLength()">
+      <option value="5">5</option>
+      <option value="10" selected>10</option>
+      <option value="15">15</option>
+      <option value="20">20</option>
+    </select>
   </div>
 
   <div id="webcam-container"></div>
   <div id="label-container">Loading...</div>
 
   <script>
-    const URL = "./model/";
+    const URL = "./model/"; // your model folder
     let model, webcam, maxPredictions;
 
     let predictionHistory = [];
@@ -48,24 +57,15 @@
       }
 
       maxPredictions = model.getTotalClasses();
-      await setupCamera(document.getElementById("cameraSelect").value);
-      window.requestAnimationFrame(loop);
-    }
 
-    async function setupCamera(facingMode) {
-      if (webcam) await webcam.stop();
+      // Default camera setup (front)
       webcam = new tmImage.Webcam(400, 400, false);
-      await webcam.setup({ facingMode });
+      await webcam.setup({ facingMode: "user" });
       await webcam.play();
+      document.getElementById("webcam-container").appendChild(webcam.canvas);
 
-      const container = document.getElementById("webcam-container");
-      container.innerHTML = "";
-      container.appendChild(webcam.canvas);
-    }
-
-    async function refreshCamera() {
-      const facingMode = document.getElementById("cameraSelect").value;
-      await setupCamera(facingMode);
+      window.requestAnimationFrame(loop);
+      await populateCameraOptions();
     }
 
     async function loop() {
@@ -102,8 +102,41 @@
       );
 
       currentAvgProb = (probs[currentStableClass] / counts[currentStableClass]) * 100;
+
       document.getElementById("label-container").innerText =
         `${currentStableClass} (${currentAvgProb.toFixed(1)}%)`;
+    }
+
+    async function populateCameraOptions() {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const videoDevices = devices.filter(device => device.kind === 'videoinput');
+      const select = document.getElementById("cameraSelect");
+
+      select.innerHTML = "";
+      videoDevices.forEach((device, index) => {
+        const option = document.createElement("option");
+        option.value = device.deviceId;
+        option.text = `Camera ${index} (${device.label || "no label"})`;
+        select.appendChild(option);
+      });
+    }
+
+    async function refreshCamera() {
+      if (webcam) await webcam.stop();
+
+      const deviceId = document.getElementById("cameraSelect").value;
+      webcam = new tmImage.Webcam(400, 400, false);
+      await webcam.setup({ deviceId: { exact: deviceId } });
+      await webcam.play();
+
+      const container = document.getElementById("webcam-container");
+      container.innerHTML = "";
+      container.appendChild(webcam.canvas);
+    }
+
+    function updateHistoryLength() {
+      historyLength = parseInt(document.getElementById("smoothingSelect").value);
+      predictionHistory = [];
     }
 
     init();
