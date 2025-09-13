@@ -3,8 +3,10 @@
 <head>
   <meta charset="UTF-8">
   <title>Liquor Bottle AI Test</title>
+  <!-- TensorFlow.js -->
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@latest"></script>
+  <!-- Teachable Machine Image Library (fixed version for tmImage) -->
+  <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@0.8.4/dist/teachablemachine-image.min.js"></script>
   <style>
     body { font-family: Arial, sans-serif; text-align: center; background: #f8f8f8; }
     #webcam-container { margin: 10px auto; }
@@ -35,7 +37,7 @@
   <div id="label-container">Loading...</div>
 
   <script>
-    const URL = "./model/";
+    const URL = "./model/"; // your model folder
     let model, webcam, maxPredictions;
 
     let predictionHistory = [];
@@ -53,17 +55,16 @@
         alert("Error loading model: " + err.message);
         return;
       }
-      
+
       maxPredictions = model.getTotalClasses();
 
-      const flip = false;
-      webcam = new tmImage.Webcam(400, 400, flip);
+      // Default camera setup (front)
+      webcam = new tmImage.Webcam(400, 400, false);
       await webcam.setup({ facingMode: "user" });
       await webcam.play();
       document.getElementById("webcam-container").appendChild(webcam.canvas);
 
       window.requestAnimationFrame(loop);
-
       await populateCameraOptions();
     }
 
@@ -121,9 +122,7 @@
     }
 
     async function refreshCamera() {
-      if (webcam) {
-        await webcam.stop();
-      }
+      if (webcam) await webcam.stop();
 
       const deviceId = document.getElementById("cameraSelect").value;
       webcam = new tmImage.Webcam(400, 400, false);
