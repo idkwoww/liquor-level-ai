@@ -16,8 +16,11 @@
   <h1>Liquor Bottle AI Test</h1>
 
   <div class="controls">
-    <label for="cameraSelect">Select Camera: </label>
-    <select id="cameraSelect"></select>
+    <label for="cameraSelect">Camera: </label>
+    <select id="cameraSelect">
+      <option value="user">Front</option>
+      <option value="environment">Rear</option>
+    </select>
     <button onclick="refreshCamera()">Refresh Camera</button>
   </div>
 
@@ -25,7 +28,7 @@
   <div id="label-container">Loading...</div>
 
   <script>
-    const URL = "./model/"; // Folder containing model.json, metadata.json, weights.bin
+    const URL = "./model/";
     let model, webcam, maxPredictions;
 
     let predictionHistory = [];
@@ -45,15 +48,24 @@
       }
 
       maxPredictions = model.getTotalClasses();
-
-      // Default camera setup (front)
-      webcam = new tmImage.Webcam(400, 400, false);
-      await webcam.setup({ facingMode: "user" });
-      await webcam.play();
-      document.getElementById("webcam-container").appendChild(webcam.canvas);
-
+      await setupCamera(document.getElementById("cameraSelect").value);
       window.requestAnimationFrame(loop);
-      await populateCameraOptions();
+    }
+
+    async function setupCamera(facingMode) {
+      if (webcam) await webcam.stop();
+      webcam = new tmImage.Webcam(400, 400, false);
+      await webcam.setup({ facingMode });
+      await webcam.play();
+
+      const container = document.getElementById("webcam-container");
+      container.innerHTML = "";
+      container.appendChild(webcam.canvas);
+    }
+
+    async function refreshCamera() {
+      const facingMode = document.getElementById("cameraSelect").value;
+      await setupCamera(facingMode);
     }
 
     async function loop() {
@@ -90,36 +102,8 @@
       );
 
       currentAvgProb = (probs[currentStableClass] / counts[currentStableClass]) * 100;
-
       document.getElementById("label-container").innerText =
         `${currentStableClass} (${currentAvgProb.toFixed(1)}%)`;
-    }
-
-    async function populateCameraOptions() {
-      const devices = await navigator.mediaDevices.enumerateDevices();
-      const videoDevices = devices.filter(device => device.kind === 'videoinput');
-      const select = document.getElementById("cameraSelect");
-
-      select.innerHTML = "";
-      videoDevices.forEach((device, index) => {
-        const option = document.createElement("option");
-        option.value = device.deviceId;
-        option.text = device.label || `Camera ${index}`;
-        select.appendChild(option);
-      });
-    }
-
-    async function refreshCamera() {
-      if (webcam) await webcam.stop();
-
-      const deviceId = document.getElementById("cameraSelect").value;
-      webcam = new tmImage.Webcam(400, 400, false);
-      await webcam.setup({ deviceId: { exact: deviceId } });
-      await webcam.play();
-
-      const container = document.getElementById("webcam-container");
-      container.innerHTML = "";
-      container.appendChild(webcam.canvas);
     }
 
     init();
