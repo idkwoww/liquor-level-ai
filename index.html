@@ -20,7 +20,15 @@
       margin-top: 10px;
       font-weight: bold;
     }
+    #prediction {
+      margin-top: 20px;
+      font-size: 18px;
+      font-weight: bold;
+    }
   </style>
+  <!-- Teachable Machine + TensorFlow -->
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image"></script>
 </head>
 <body>
   <h1>Bottle Level Detector</h1>
@@ -33,27 +41,69 @@
   <br><br>
   <video id="cameraFeed" autoplay playsinline></video>
   <p id="statusMessage">Waiting for camera...</p>
+  <div id="prediction"></div>
 
   <script>
     let currentStream = null;
-    let currentCameraIndex = 0;
-    let cameras = [];
+    let cameras = {};
+    let currentCameraKey = "front";
 
+    // --- Teachable Machine setup ---
+    const MODEL_URL = "model/"; // put your exported model folder here
+    let model, maxPredictions;
+
+    async function loadModel() {
+      try {
+        model = await tmImage.load(MODEL_URL + "model.json", MODEL_URL + "metadata.json");
+        maxPredictions = model.getTotalClasses();
+        predictLoop();
+      } catch (err) {
+        console.error("Error loading model:", err);
+        document.getElementById("prediction").textContent = "Model failed to load.";
+      }
+    }
+
+    async function predictLoop() {
+      const video = document.getElementById("cameraFeed");
+      if (model && video.readyState === 4) {
+        const prediction = await model.predict(video);
+        let text = "";
+        prediction.forEach(p => {
+          text += `${p.className}: ${(p.probability * 100).toFixed(1)}%<br>`;
+        });
+        document.getElementById("prediction").innerHTML = text;
+      }
+      requestAnimationFrame(predictLoop);
+    }
+
+    // --- Camera setup ---
     async function listCameras() {
       const devices = await navigator.mediaDevices.enumerateDevices();
-      cameras = devices.filter(device => device.kind === "videoinput");
+      const videoDevices = devices.filter(d => d.kind === "videoinput");
+
+      // pick the first "front" and first "back"
+      const frontCam = videoDevices.find(d => d.label.toLowerCase().includes("front")) || videoDevices[0];
+      const backCam = videoDevices.find(d => d.label.toLowerCase().includes("back")) || videoDevices[1];
+
+      cameras = {
+        front: frontCam,
+        back: backCam
+      };
 
       const cameraSelect = document.getElementById("cameraSelect");
       cameraSelect.innerHTML = "";
-      cameras.forEach((camera, index) => {
-        const option = document.createElement("option");
-        option.value = camera.deviceId;
-        option.text = camera.label || `Camera ${index + 1}`;
-        cameraSelect.appendChild(option);
+
+      Object.keys(cameras).forEach(key => {
+        if (cameras[key]) {
+          const option = document.createElement("option");
+          option.value = key;
+          option.text = key === "front" ? "Front Camera" : "Back Camera";
+          cameraSelect.appendChild(option);
+        }
       });
 
-      if (cameras.length > 0) {
-        startCamera(cameras[currentCameraIndex].deviceId);
+      if (cameras.front) {
+        startCamera(cameras.front.deviceId);
       } else {
         document.getElementById("statusMessage").textContent = "No cameras found.";
       }
@@ -69,45 +119,40 @@
 
       try {
         statusMessage.textContent = "Starting camera...";
-
         const stream = await navigator.mediaDevices.getUserMedia({
           video: { deviceId: deviceId ? { exact: deviceId } : undefined }
         });
-
         currentStream = stream;
         video.srcObject = stream;
 
         video.onloadedmetadata = () => {
           video.play();
-          statusMessage.textContent = ""; // clear waiting once camera is ready
+          statusMessage.textContent = ""; // clear "waiting"
         };
-
       } catch (err) {
         console.error("Camera error:", err);
-        statusMessage.textContent = "Camera not accessible. Please allow permissions.";
+        statusMessage.textContent = "Camera not accessible.";
       }
     }
 
     document.getElementById("cameraSelect").addEventListener("change", (event) => {
-      startCamera(event.target.value);
+      currentCameraKey = event.target.value;
+      startCamera(cameras[currentCameraKey].deviceId);
     });
 
     document.getElementById("switchCamera").addEventListener("click", () => {
-      if (cameras.length > 1) {
-        currentCameraIndex = (currentCameraIndex + 1) % cameras.length;
-        startCamera(cameras[currentCameraIndex].deviceId);
-        document.getElementById("cameraSelect").selectedIndex = currentCameraIndex;
-      }
+      currentCameraKey = currentCameraKey === "front" ? "back" : "front";
+      startCamera(cameras[currentCameraKey].deviceId);
+      document.getElementById("cameraSelect").value = currentCameraKey;
     });
 
     document.getElementById("resetCamera").addEventListener("click", () => {
-      if (cameras.length > 0) {
-        startCamera(cameras[currentCameraIndex].deviceId);
-      }
+      startCamera(cameras[currentCameraKey].deviceId);
     });
 
     // Initialize
     listCameras();
+    loadModel();
   </script>
 </body>
 </html>
