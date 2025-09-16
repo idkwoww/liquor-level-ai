@@ -2,156 +2,131 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Bottle Level Detector</title>
-
-  <!-- TensorFlow.js -->
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.10.0"></script>
-  <!-- Teachable Machine (correct CDN that exposes tmImage) -->
-  <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@0.8/dist/teachablemachine-image.min.js"></script>
-
   <style>
-    body { font-family: Arial, sans-serif; text-align: center; margin: 20px; }
-    video { width: 90%; max-width: 400px; margin: 10px auto; border: 2px solid #333; border-radius: 8px; }
-    #label-container { margin-top: 20px; font-size: 1.2em; font-weight: bold; }
-    select, button { margin: 10px; padding: 10px; font-size: 1em; }
+    body { font-family: Arial, sans-serif; text-align: center; }
+    video { width: 300px; height: auto; border: 1px solid black; margin-top: 10px; }
+    #label-container { margin-top: 20px; font-size: 20px; font-weight: bold; }
+    select, button { margin: 10px; padding: 8px; }
   </style>
 </head>
 <body>
   <h1>Bottle Level Detector</h1>
 
-  <label for="cameraSelect">Choose Camera:</label>
-  <select id="cameraSelect"></select>
-  <br>
-  <button onclick="switchCamera()">Switch Camera</button>
-  <button onclick="reset()">Reset</button>
+  <label for="cameraSelect">Choose camera:</label>
+  <select id="cameraSelect">
+    <option value="user">Front Camera</option>
+    <option value="environment">Rear Camera</option>
+  </select>
+  <button onclick="refreshCamera()">Switch Camera</button>
+  <button onclick="resetPrediction()">Reset</button>
 
-  <div><video id="webcam" autoplay playsinline muted></video></div>
+  <br><br>
+  <video id="webcam" autoplay playsinline muted></video>
+
   <div id="label-container">Loading model...</div>
 
+  <!-- 1. Load TensorFlow.js -->
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.10.0"></script>
+  <!-- 2. Load Teachable Machine helper -->
+  <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@0.8/dist/teachablemachine-image.min.js"></script>
+
   <script>
-    const URL = "https://USERNAME.github.io/REPONAME/model/"; // 🔹 Replace USERNAME & REPONAME
-    let model, webcam, labelContainer, maxPredictions;
-    let currentStream;
-    let selectedDeviceId = null;
+    const modelURL = "model/model.json";
+    const metadataURL = "model/metadata.json";
+    let model, webcamStream, labelContainer;
+
+    let predictionHistory = [];
+    let lockedResult = null;
+
+    const levelMap = {
+      "Full": 100,
+      "Three Quarter": 75,
+      "Half": 50,
+      "Quarter": 25,
+      "Empty": 0
+    };
 
     async function init() {
       try {
-        // Load model + metadata
-        const modelURL = URL + "model.json";
-        const metadataURL = URL + "metadata.json";
         model = await tmImage.load(modelURL, metadataURL);
-        maxPredictions = model.getTotalClasses();
-
         labelContainer = document.getElementById("label-container");
-        labelContainer.innerHTML = "Model loaded. Starting camera...";
-
-        await setupCameraSelection();
+        labelContainer.innerHTML = "Model loaded! Waiting for camera...";
+        startCamera("user"); // default to front
       } catch (err) {
-        console.error("Model failed to load:", err);
-        labelContainer.innerHTML = "Model failed to load.";
+        document.getElementById("label-container").innerHTML =
+          "Model failed to load: " + err.message;
       }
     }
 
-    async function setupCameraSelection() {
-      const devices = await navigator.mediaDevices.enumerateDevices();
-      const videoDevices = devices.filter(d => d.kind === "videoinput");
-
-      const cameraSelect = document.getElementById("cameraSelect");
-      cameraSelect.innerHTML = "";
-
-      // Show only 1 front + 1 back
-      const seen = new Set();
-      videoDevices.forEach(device => {
-        const label = device.label.toLowerCase();
-        if ((label.includes("back") || label.includes("rear")) && !seen.has("rear")) {
-          seen.add("rear");
-          const option = document.createElement("option");
-          option.value = device.deviceId;
-          option.text = "Rear Camera";
-          cameraSelect.appendChild(option);
-        } else if ((label.includes("front") || label.includes("user")) && !seen.has("front")) {
-          seen.add("front");
-          const option = document.createElement("option");
-          option.value = device.deviceId;
-          option.text = "Front Camera";
-          cameraSelect.appendChild(option);
-        }
-      });
-
-      if (cameraSelect.options.length === 0) {
-        videoDevices.forEach(device => {
-          const option = document.createElement("option");
-          option.value = device.deviceId;
-          option.text = device.label || `Camera ${cameraSelect.options.length + 1}`;
-          cameraSelect.appendChild(option);
-        });
+    async function startCamera(facingMode) {
+      if (webcamStream) {
+        webcamStream.getTracks().forEach(track => track.stop());
       }
 
-      cameraSelect.onchange = () => {
-        selectedDeviceId = cameraSelect.value;
-        startCamera(selectedDeviceId);
-      };
-
-      if (cameraSelect.options.length > 0) {
-        selectedDeviceId = cameraSelect.options[0].value;
-        startCamera(selectedDeviceId);
-      }
-    }
-
-    async function startCamera(deviceId) {
-      if (currentStream) {
-        currentStream.getTracks().forEach(track => track.stop());
-      }
+      const constraints = { video: { facingMode: facingMode } };
 
       try {
-        const constraints = {
-          video: { deviceId: deviceId ? { exact: deviceId } : undefined }
-        };
+        webcamStream = await navigator.mediaDevices.getUserMedia(constraints);
+        const videoElement = document.getElementById("webcam");
+        videoElement.srcObject = webcamStream;
 
-        currentStream = await navigator.mediaDevices.getUserMedia(constraints);
-        const video = document.getElementById("webcam");
-        video.srcObject = currentStream;
-        video.onloadedmetadata = () => {
-          video.play();
-          loop();
+        videoElement.onloadeddata = () => {
+          predictLoop(videoElement);
         };
-
-        labelContainer.innerHTML = "Camera started. Detecting...";
       } catch (err) {
-        console.error("Camera start error:", err);
-        labelContainer.innerHTML = "Unable to access camera.";
+        alert("Camera error: " + err.message);
       }
     }
 
-    async function loop() {
-      const video = document.getElementById("webcam");
-      if (model && video.readyState === 4) {
-        const prediction = await model.predict(video);
-        let best = prediction[0];
-        prediction.forEach(p => { if (p.probability > best.probability) best = p; });
-        labelContainer.innerHTML = `${best.className} (${(best.probability * 100).toFixed(1)}%)`;
-      }
-      requestAnimationFrame(loop);
+    async function refreshCamera() {
+      const select = document.getElementById("cameraSelect");
+      startCamera(select.value);
     }
 
-    function switchCamera() {
-      const cameraSelect = document.getElementById("cameraSelect");
-      if (cameraSelect.options.length > 1) {
-        cameraSelect.selectedIndex = (cameraSelect.selectedIndex + 1) % cameraSelect.options.length;
-        selectedDeviceId = cameraSelect.value;
-        startCamera(selectedDeviceId);
+    function resetPrediction() {
+      lockedResult = null;
+      predictionHistory = [];
+      labelContainer.innerHTML = "Waiting for bottle...";
+    }
+
+    async function predictLoop(videoElement) {
+      while (true) {
+        if (!lockedResult) {
+          const prediction = await model.predict(videoElement);
+
+          let best = prediction[0];
+          for (let p of prediction) {
+            if (p.probability > best.probability) best = p;
+          }
+
+          predictionHistory.push(best);
+          if (predictionHistory.length > 10) predictionHistory.shift();
+
+          const sameClassPreds = predictionHistory.filter(p => p.className === best.className);
+          const avgProb = sameClassPreds.reduce((sum, p) => sum + p.probability, 0) / sameClassPreds.length;
+
+          if (avgProb > 0.8) {
+            lockedResult = {
+              className: best.className,
+              percent: levelMap[best.className] || 0,
+              confidence: (avgProb * 100).toFixed(1)
+            };
+          }
+
+          if (!lockedResult) {
+            labelContainer.innerHTML = `Analyzing... Best guess: ${best.className} (${(avgProb*100).toFixed(1)}%)`;
+          }
+        } else {
+          labelContainer.innerHTML =
+            `Bottle Level: ${lockedResult.percent}% (Locked at ${lockedResult.className}, ${lockedResult.confidence}% confident)`;
+        }
+
+        await tf.nextFrame();
       }
     }
 
-    function reset() {
-      labelContainer.innerHTML = "Reset. Choose a camera to start again.";
-      if (currentStream) {
-        currentStream.getTracks().forEach(track => track.stop());
-      }
-    }
-
-    window.onload = init;
+    init();
   </script>
 </body>
 </html>
