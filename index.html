@@ -24,12 +24,12 @@
   <br><br>
   <video id="webcam" autoplay playsinline muted></video>
 
-  <div id="label-container">Loading model...</div>
+  <div id="label-container">Waiting for camera...</div>
 
-  <!-- 1. Load TensorFlow.js -->
+  <!-- TensorFlow.js -->
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.10.0"></script>
-  <!-- 2. Load Teachable Machine helper -->
-  <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@0.8/dist/teachablemachine-image.min.js"></script>
+  <!-- Teachable Machine -->
+  <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@latest"></script>
 
   <script>
     const modelURL = "model/model.json";
@@ -39,24 +39,10 @@
     let predictionHistory = [];
     let lockedResult = null;
 
-    const levelMap = {
-      "Full": 100,
-      "Three Quarter": 75,
-      "Half": 50,
-      "Quarter": 25,
-      "Empty": 0
-    };
-
     async function init() {
-      try {
-        model = await tmImage.load(modelURL, metadataURL);
-        labelContainer = document.getElementById("label-container");
-        labelContainer.innerHTML = "Model loaded! Waiting for camera...";
-        startCamera("user"); // default to front
-      } catch (err) {
-        document.getElementById("label-container").innerHTML =
-          "Model failed to load: " + err.message;
-      }
+      model = await tmImage.load(modelURL, metadataURL);
+      labelContainer = document.getElementById("label-container");
+      startCamera("user"); // default front cam
     }
 
     async function startCamera(facingMode) {
@@ -90,11 +76,22 @@
       labelContainer.innerHTML = "Waiting for bottle...";
     }
 
+    function formatLabel(className) {
+      if (className.toLowerCase() === "empty") return "0% (Empty)";
+      if (className.toLowerCase() === "full") return "100% (Full)";
+      const value = parseFloat(className);
+      if (!isNaN(value)) {
+        return `${Math.round(value * 100)}%`;
+      }
+      return className; // fallback
+    }
+
     async function predictLoop(videoElement) {
       while (true) {
         if (!lockedResult) {
           const prediction = await model.predict(videoElement);
 
+          // Best prediction
           let best = prediction[0];
           for (let p of prediction) {
             if (p.probability > best.probability) best = p;
@@ -106,20 +103,19 @@
           const sameClassPreds = predictionHistory.filter(p => p.className === best.className);
           const avgProb = sameClassPreds.reduce((sum, p) => sum + p.probability, 0) / sameClassPreds.length;
 
-          if (avgProb > 0.8) {
+          if (avgProb > 0.8) { // lock threshold
             lockedResult = {
               className: best.className,
-              percent: levelMap[best.className] || 0,
+              label: formatLabel(best.className),
               confidence: (avgProb * 100).toFixed(1)
             };
           }
 
           if (!lockedResult) {
-            labelContainer.innerHTML = `Analyzing... Best guess: ${best.className} (${(avgProb*100).toFixed(1)}%)`;
+            labelContainer.innerHTML = `Analyzing... Best guess: ${formatLabel(best.className)} (${(avgProb*100).toFixed(1)}%)`;
           }
         } else {
-          labelContainer.innerHTML =
-            `Bottle Level: ${lockedResult.percent}% (Locked at ${lockedResult.className}, ${lockedResult.confidence}% confident)`;
+          labelContainer.innerHTML = `Bottle Level: ${lockedResult.label} (Locked with ${lockedResult.confidence}% confidence)`;
         }
 
         await tf.nextFrame();
