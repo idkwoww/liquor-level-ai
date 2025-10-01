@@ -1,128 +1,48 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Bottle Level Detector</title>
   <style>
-    body { font-family: Arial, sans-serif; text-align: center; }
-    video { width: 300px; height: auto; border: 1px solid black; margin-top: 10px; }
-    #label-container { margin-top: 20px; font-size: 20px; font-weight: bold; }
-    select, button { margin: 10px; padding: 8px; }
+    body {
+      font-family: Arial, sans-serif;
+      text-align: center;
+      margin: 20px;
+    }
+    video {
+      border: 1px solid #ccc;
+      border-radius: 10px;
+      width: 100%;
+      max-width: 400px;
+    }
+    #label-container div {
+      margin-top: 8px;
+      font-size: 18px;
+    }
   </style>
 </head>
 <body>
   <h1>Bottle Level Detector</h1>
 
+  <!-- Camera selector -->
   <label for="cameraSelect">Choose camera:</label>
-  <select id="cameraSelect">
-    <option value="user">Front Camera</option>
-    <option value="environment">Rear Camera</option>
-  </select>
-  <button onclick="refreshCamera()">Switch Camera</button>
-  <button onclick="resetPrediction()">Reset</button>
+  <select id="cameraSelect"></select>
+  <button id="switchCamera">Switch Camera</button>
+  <button id="reset">Reset</button>
 
-  <br><br>
-  <video id="webcam" autoplay playsinline muted></video>
+  <!-- Video preview -->
+  <div>
+    <video id="webcam" autoplay playsinline muted></video>
+  </div>
 
-  <div id="label-container">Waiting for camera...</div>
+  <!-- Model results -->
+  <div id="label-container"></div>
 
-  <!-- TensorFlow.js -->
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.10.0"></script>
-  <!-- Teachable Machine -->
-  <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@latest"></script>
-
-  <script>
-    const modelURL = "model/model.json";
-    const metadataURL = "model/metadata.json";
-    let model, webcamStream, labelContainer;
-
-    let predictionHistory = [];
-    let lockedResult = null;
-
-    async function init() {
-      model = await tmImage.load(modelURL, metadataURL);
-      labelContainer = document.getElementById("label-container");
-      startCamera("user"); // default front cam
-    }
-
-    async function startCamera(facingMode) {
-      if (webcamStream) {
-        webcamStream.getTracks().forEach(track => track.stop());
-      }
-
-      const constraints = { video: { facingMode: facingMode } };
-
-      try {
-        webcamStream = await navigator.mediaDevices.getUserMedia(constraints);
-        const videoElement = document.getElementById("webcam");
-        videoElement.srcObject = webcamStream;
-
-        videoElement.onloadeddata = () => {
-          predictLoop(videoElement);
-        };
-      } catch (err) {
-        alert("Camera error: " + err.message);
-      }
-    }
-
-    async function refreshCamera() {
-      const select = document.getElementById("cameraSelect");
-      startCamera(select.value);
-    }
-
-    function resetPrediction() {
-      lockedResult = null;
-      predictionHistory = [];
-      labelContainer.innerHTML = "Waiting for bottle...";
-    }
-
-    function formatLabel(className) {
-      if (className.toLowerCase() === "empty") return "0% (Empty)";
-      if (className.toLowerCase() === "full") return "100% (Full)";
-      const value = parseFloat(className);
-      if (!isNaN(value)) {
-        return `${Math.round(value * 100)}%`;
-      }
-      return className; // fallback
-    }
-
-    async function predictLoop(videoElement) {
-      while (true) {
-        if (!lockedResult) {
-          const prediction = await model.predict(videoElement);
-
-          // Best prediction
-          let best = prediction[0];
-          for (let p of prediction) {
-            if (p.probability > best.probability) best = p;
-          }
-
-          predictionHistory.push(best);
-          if (predictionHistory.length > 10) predictionHistory.shift();
-
-          const sameClassPreds = predictionHistory.filter(p => p.className === best.className);
-          const avgProb = sameClassPreds.reduce((sum, p) => sum + p.probability, 0) / sameClassPreds.length;
-
-          if (avgProb > 0.8) { // lock threshold
-            lockedResult = {
-              className: best.className,
-              label: formatLabel(best.className),
-              confidence: (avgProb * 100).toFixed(1)
-            };
-          }
-
-          if (!lockedResult) {
-            labelContainer.innerHTML = `Analyzing... Best guess: ${formatLabel(best.className)} (${(avgProb*100).toFixed(1)}%)`;
-          }
-        } else {
-          labelContainer.innerHTML = `Bottle Level: ${lockedResult.label} (Locked with ${lockedResult.confidence}% confidence)`;
-        }
-
-        await tf.nextFrame();
-      }
-    }
-
-    init();
-  </script>
+  <!-- Load Teachable Machine library BEFORE your script -->
+  <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@0.8/dist/teachablemachine-image.min.js"></script>
+  
+  <!-- Your code -->
+  <script src="index.js"></script>
 </body>
 </html>
