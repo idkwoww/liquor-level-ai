@@ -1,85 +1,51 @@
-const URL = "model/"; // make sure your model folder is at /model in GitHub
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Bottle Level Detector</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      text-align: center;
+      margin: 20px;
+    }
+    video {
+      border: 1px solid #ccc;
+      border-radius: 10px;
+      width: 100%;
+      max-width: 400px;
+    }
+    #label-container div {
+      margin-top: 8px;
+      font-size: 18px;
+    }
+  </style>
+</head>
+<body>
+  <h1>Bottle Level Detector</h1>
 
-let model, webcam, labelContainer, maxPredictions;
-let currentStream = null;
+  <!-- Camera selector -->
+  <label for="cameraSelect">Choose camera:</label>
+  <select id="cameraSelect">
+    <option value="user">Front Camera</option>
+    <option value="environment">Rear Camera</option>
+  </select>
+  <button id="switchCamera">Switch Camera</button>
+  <button id="reset">Reset</button>
 
-// Initialize the model and webcam
-async function init(cameraId = null) {
-  const modelURL = URL + "model.json";
-  const metadataURL = URL + "metadata.json";
+  <!-- Video preview -->
+  <div>
+    <video id="webcam" autoplay playsinline muted></video>
+  </div>
 
-  // Load the model
-  model = await tmImage.load(modelURL, metadataURL);
-  maxPredictions = model.getTotalClasses();
+  <!-- Model results -->
+  <div id="label-container">Waiting for model...</div>
 
-  // Setup webcam
-  const flip = false; // no flip by default
-  const constraints = {
-    video: cameraId ? { deviceId: cameraId } : true
-  };
-  webcam = new tmImage.Webcam(400, 400, flip);
-  await webcam.setup(constraints);
-  await webcam.play();
+  <!-- Teachable Machine library -->
+  <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@0.8/dist/teachablemachine-image.min.js"></script>
 
-  // Attach webcam to video
-  document.getElementById("webcam").srcObject = webcam.webcam;
-  window.requestAnimationFrame(loop);
-
-  // Setup label container
-  labelContainer = document.getElementById("label-container");
-  labelContainer.innerHTML = "";
-  for (let i = 0; i < maxPredictions; i++) {
-    labelContainer.appendChild(document.createElement("div"));
-  }
-}
-
-async function loop() {
-  webcam.update();
-  await predict();
-  window.requestAnimationFrame(loop);
-}
-
-async function predict() {
-  const prediction = await model.predict(webcam.canvas);
-  prediction.sort((a, b) => b.probability - a.probability);
-  
-  // Show top prediction
-  const top = prediction[0];
-  labelContainer.childNodes[0].innerHTML = 
-    `${top.className}: ${(top.probability * 100).toFixed(1)}%`;
-}
-
-// Camera dropdown setup
-async function setupCameraOptions() {
-  const devices = await navigator.mediaDevices.enumerateDevices();
-  const videoDevices = devices.filter(d => d.kind === "videoinput");
-
-  const select = document.getElementById("cameraSelect");
-  select.innerHTML = "";
-
-  videoDevices.forEach((device, index) => {
-    const option = document.createElement("option");
-    option.value = device.deviceId;
-    option.text = device.label || `Camera ${index + 1}`;
-    select.appendChild(option);
-  });
-
-  select.onchange = () => {
-    switchCamera(select.value);
-  };
-}
-
-async function switchCamera(cameraId) {
-  if (currentStream) {
-    currentStream.getTracks().forEach(track => track.stop());
-  }
-  await init(cameraId);
-}
-
-// Reset button
-document.getElementById("reset").onclick = () => {
-  labelContainer.innerHTML = "";
-};
-
-// Start everything
-setupCameraOptions().then(() => init());
+  <!-- Your code -->
+  <script src="index.js"></script>
+</body>
+</html>
